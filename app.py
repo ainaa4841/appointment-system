@@ -1,9 +1,11 @@
 import streamlit as st
 from auth import register_user, login_user, check_email_exists, check_password_complexity, get_customer_id
 from google_sheets import (
-            save_customer, save_appointment, save_file_metadata,
-            upload_to_drive, get_appointments, get_pharmacist_schedule,
-            update_schedule, update_appointment_status, get_worksheet_data # Add this
+    save_customer, save_appointment, save_file_metadata,
+    upload_to_drive, get_appointments, get_pharmacist_schedule, # This get_pharmacist_schedule is likely for old "Schedules" sheet
+    update_schedule, update_appointment_status, get_worksheet_data,
+    save_pharmacist_schedule_slot, get_pharmacist_available_slots,
+    update_schedule_slot_status, get_all_pharmacist_schedule_slots # New imports
 )
 import pandas as pd
 import os
@@ -22,13 +24,14 @@ if 'logged_in' not in st.session_state:
     st.session_state.user_email = ''
     st.session_state.customer_id = ''
 
-menu = ["Login", "Register"]
+enu = ["Login", "Register"]
 if st.session_state.logged_in:
     if st.session_state.user_role == 'Customer':
         menu = ["Book Appointment", "My Appointments", "Logout"]
     elif st.session_state.user_role == 'Pharmacist':
-        menu = ["Manage Schedule", "Logout"]
-
+        # Updated menu for Pharmacist
+        menu = ["Manage Pending Appointments", "Set Availability", "View Schedule", "Logout"]
+                
 choice = st.sidebar.selectbox("Menu", menu)
 
 if choice == "Register":
@@ -69,34 +72,30 @@ elif choice == "Login":
         else:
             st.error("Invalid credentials!")
 
-elif choice == "Book Appointment":
-    st.subheader("Book an Appointment")
-    date = st.date_input("Select Date")
-    time = st.selectbox("Select Time Slot", ["9:00AM", "11:00AM", "2:00PM", "4:00PM"])
-    uploaded_file = st.file_uploader("Upload Referral Letter")
-
-    if st.button("Book Appointment"):
-        if not uploaded_file:
-            st.error("Please upload a referral letter.")
-        else:
-            if not os.path.exists("uploads"):
-                os.makedirs("uploads")
-
-            file_path = f"uploads/{uploaded_file.name}"
-            with open(file_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-
-            file_id = upload_to_drive(file_path)
-            file_link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
-
-            save_file_metadata([st.session_state.user_username, uploaded_file.name, file_id])
-
-            from google_sheets import update_customer_referral_letter
-            update_customer_referral_letter(st.session_state.user_username, file_link)
-
-            save_appointment([st.session_state.customer_id, str(date), time, "Pending Confirmation"])
-
-            st.success(f"Appointment booked on {date} at {time}. Status: Pending Confirmation.")
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    file_id = upload_to_drive(file_path)
+                    file_link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
+                    save_file_metadata([st.session_state.user_username, uploaded_file.name, file_id])
+                    # 2. Update customer's referral letter link in Customers sheet
+                    update_customer_referral_letter(st.session_state.user_username, file_link)
+                    # 3. Save the appointment
+                    # Add selected_pharmacist_username to the appointment data
+                    # Ensure your Appointments sheet has a column for PharmacistUsername
+                    # (e.g., after customerID, before Date)
+                    appointment_data = [
+                        st.session_state.customer_id,
+                        selected_pharmacist_username, # New: Store assigned pharmacist
+                        selected_date,
+                        selected_time,
+                        "Pending Confirmation"
+                    ]
+                    save_appointment(appointment_data)
+                    # 4. Mark the selected schedule slot as "Booked"
+                    update_schedule_slot_status(selected_schedule_id, "Booked")
+                    st.success(f"Appointment booked on {selected_date} at {selected_time} with {selected_pharmacist_username}. Status: Pending Confirmation.")
+                    st.info("The pharmacist will review your request and confirm the appointment.")
+                    st.experimental_rerun()
 
 elif choice == "My Appointments":
     st.subheader("My Appointments")
@@ -177,83 +176,60 @@ elif choice == "My Appointments":
                         st.session_state[f'cancel_active_{appt_id}'] = False # Hide form
                         st.experimental_rerun()
 
-elif choice == "Manage Schedule":
-    st.subheader("Manage Appointments (Pharmacist)")
-
-    appointments = get_appointments() # Fetch all appointments
-    # Filter for pending appointments
-    pending_appointments = [appt for appt in appointments if appt.get('Status') == "Pending Confirmation"]
-
-    if not pending_appointments:
-        st.info("No pending appointments to review at this time.")
-    else:
-        st.write("Review the following pending appointment requests:")
-        # Fetch customer data to display customer names
-        customers_df = get_worksheet_data("Customers") # Assuming a function to get Customers sheet data
-
-        for idx, appt in enumerate(pending_appointments):
-            appt_id = appt.get('appointmentID')
-            customer_id = appt.get('customerID')
-            appt_date = appt.get('Date')
-            appt_time = appt.get('Time')
-            appt_status = appt.get('Status')
-
-            customer_name = "N/A"
-            referral_letter_link = "N/A"
-            if not customers_df.empty and customer_id:
-                # Find customer details using customerID
-                customer_row = customers_df[customers_df['customerID'] == str(customer_id)]
-                if not customer_row.empty:
-                    customer_name = customer_row['Full Name'].iloc[0] # Assuming 'Full Name' column
-                    referral_letter_link = customer_row.get('customerReferalLetter', 'N/A').iloc[0] # Assuming 'customerReferalLetter' column
-
-            st.markdown(f"---")
-            st.write(f"**Appointment ID:** {appt_id}")
-            st.write(f"**Customer Name:** {customer_name}")
-            st.write(f"**Requested Date:** {appt_date}")
-            st.write(f"**Requested Time:** {appt_time}")
-            st.write(f"**Current Status:** {appt_status}")
-
-            if referral_letter_link and referral_letter_link != 'N/A':
-                st.markdown(f"**Referral Letter:** [View Letter]({referral_letter_link})")
-            else:
-                st.write("**Referral Letter:** Not provided or link unavailable.")
-
-            # Buttons for Confirm/Reject
-            col_confirm, col_reject = st.columns(2)
-            with col_confirm:
-                if st.button(f"Confirm {appt_id}", key=f"confirm_{appt_id}_{idx}"):
-                    update_appointment_status(appt_id, "Confirmed")
-                    st.success(f"Appointment {appt_id} confirmed successfully!")
+        st.dataframe(df_schedule[['Date', 'Time', 'Status']]) # Display relevant columns
+        # Optional: Allow pharmacist to mark a slot as "Unavailable" if needed
+        st.markdown("---")
+        st.write("Mark a slot as Unavailable:")
+        slot_options = [f"{s['Date']} {s['Time']} ({s['Status']})" for s in pharmacist_slots if s['Status'] == "Available"]
+        if slot_options:
+            selected_slot_str = st.selectbox("Select slot to mark as Unavailable", slot_options)
+            if st.button("Mark as Unavailable"):
+                # Find the ScheduleID for the selected slot
+                selected_slot_parts = selected_slot_str.split(' ')
+                selected_date = selected_slot_parts[0]
+                selected_time = selected_slot_parts[1]
+                slot_to_update_id = None
+                for slot in pharmacist_slots:
+                    if (slot.get('Date') == selected_date and
+                        slot.get('Time') == selected_time and
+                        slot.get('Status') == "Available"):
+                        slot_to_update_id = slot.get('ScheduleID')
+                        break
+                if slot_to_update_id:
+                    update_schedule_slot_status(slot_to_update_id, "Unavailable")
+                    st.success(f"Slot {selected_date} {selected_time} marked as Unavailable.")
                     st.experimental_rerun()
-
-            with col_reject:
-                if st.button(f"Reject {appt_id}", key=f"reject_{appt_id}_{idx}"):
-                    st.session_state[f'show_rejection_form_{appt_id}'] = True
+                else:
+                    st.error("Could not find the selected slot or it's not available.")
+        else:
+            st.info("No available slots to mark as unavailable.")
+        st.dataframe(df_schedule[['Date', 'Time', 'Status']]) # Display relevant columns
+        # Optional: Allow pharmacist to mark a slot as "Unavailable" if needed
+        st.markdown("---")
+        st.write("Mark a slot as Unavailable:")
+        slot_options = [f"{s['Date']} {s['Time']} ({s['Status']})" for s in pharmacist_slots if s['Status'] == "Available"]
+        if slot_options:
+            selected_slot_str = st.selectbox("Select slot to mark as Unavailable", slot_options)
+            if st.button("Mark as Unavailable"):
+                # Find the ScheduleID for the selected slot
+                selected_slot_parts = selected_slot_str.split(' ')
+                selected_date = selected_slot_parts[0]
+                selected_time = selected_slot_parts[1]
+                slot_to_update_id = None
+                for slot in pharmacist_slots:
+                    if (slot.get('Date') == selected_date and
+                        slot.get('Time') == selected_time and
+                        slot.get('Status') == "Available"):
+                        slot_to_update_id = slot.get('ScheduleID')
+                        break
+                if slot_to_update_id:
+                    update_schedule_slot_status(slot_to_update_id, "Unavailable")
+                    st.success(f"Slot {selected_date} {selected_time} marked as Unavailable.")
                     st.experimental_rerun()
-
-            # Rejection form (shown only if reject button is clicked)
-            if st.session_state.get(f'show_rejection_form_{appt_id}', False):
-                with st.form(key=f"rejection_form_{appt_id}_{idx}"):
-                    rejection_reason = st.text_area(
-                        f"Reason for rejecting appointment {appt_id} (optional):",
-                        key=f"reason_input_{appt_id}_{idx}"
-                    )
-                    col_submit_reject, col_cancel_reject = st.columns(2)
-                    with col_submit_reject:
-                        submit_rejection = st.form_submit_button(f"Submit Rejection for {appt_id}")
-                    with col_cancel_reject:
-                        cancel_rejection = st.form_submit_button(f"Cancel")
-
-                    if submit_rejection:
-                        update_appointment_status(appt_id, "Rejected", rejection_reason=rejection_reason)
-                        st.success(f"Appointment {appt_id} rejected successfully!")
-                        st.session_state[f'show_rejection_form_{appt_id}'] = False # Hide form
-                        st.experimental_rerun()
-                    elif cancel_rejection:
-                        st.session_state[f'show_rejection_form_{appt_id}'] = False # Hide form
-                        st.experimental_rerun()
-
+                else:
+                    st.error("Could not find the selected slot or it's not available.")
+        else:
+            st.info("No available slots to mark as unavailable.")
                         
 elif choice == "Logout":
     st.session_state.logged_in = False
