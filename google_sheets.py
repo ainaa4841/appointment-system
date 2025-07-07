@@ -85,16 +85,23 @@ def update_schedule():
     worksheet.append_row([f"Updated at {now}"])
 
 # Update appointment status (reschedule or cancel)
-def update_appointment_status(appointment_id, new_status, new_date=None, new_time=None):
+def update_appointment_status(appointment_id, new_status, new_date=None, new_time=None, rejection_reason=None):
     worksheet = spreadsheet.worksheet("Appointments")
     records = worksheet.get_all_records()
-    for idx, record in enumerate(records, start=2):
+    for idx, record in enumerate(records, start=2):  # Start at row 2 because row 1 is header
         if str(record['appointmentID']) == str(appointment_id):
             if new_status == "Rescheduled":
-                worksheet.update_acell(f"C{idx}", new_date)
-                worksheet.update_acell(f"D{idx}", new_time)
+                worksheet.update_acell(f"C{idx}", new_date)  # C = Date column
+                worksheet.update_acell(f"D{idx}", new_time)  # D = Time column
                 worksheet.update_acell(f"E{idx}", "Pending Confirmation")
             elif new_status == "Cancelled":
                 worksheet.update_acell(f"E{idx}", "Cancelled")
+            elif new_status == "Confirmed":
+                worksheet.update_acell(f"E{idx}", "Confirmed")
+            elif new_status == "Rejected":
+                worksheet.update_acell(f"E{idx}", "Rejected")
+                if rejection_reason:
+                    worksheet.update_acell(f"F{idx}", rejection_reason)  # Optional: Assuming F is for reason
             break
+
 
