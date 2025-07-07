@@ -127,37 +127,82 @@ elif choice == "My Appointments":
                 st.experimental_rerun()
 
 elif choice == "Manage Schedule":
-    st.subheader("Pending Appointments")
+    st.subheader("Manage Appointments (Pharmacist)")
 
-    appointments = get_appointments()
-    pending_appointments = [appt for appt in appointments if appt['Status'] == "Pending Confirmation"]
+    appointments = get_appointments() # Fetch all appointments
+    # Filter for pending appointments
+    pending_appointments = [appt for appt in appointments if appt.get('Status') == "Pending Confirmation"]
 
     if not pending_appointments:
-        st.info("No pending appointments to review.")
+        st.info("No pending appointments to review at this time.")
     else:
+        st.write("Review the following pending appointment requests:")
+        # Fetch customer data to display customer names
+        customers_df = get_worksheet_data("Customers") # Assuming a function to get Customers sheet data
+
         for idx, appt in enumerate(pending_appointments):
-            st.write(f"Appointment ID: {appt['appointmentID']}")
-            st.write(f"Customer ID: {appt['customerID']}")
-            st.write(f"Date: {appt['Date']}")
-            st.write(f"Time: {appt['Time']}")
-            st.write("---")
+            appt_id = appt.get('appointmentID')
+            customer_id = appt.get('customerID')
+            appt_date = appt.get('Date')
+            appt_time = appt.get('Time')
+            appt_status = appt.get('Status')
 
-            confirm_button = st.button(f"Confirm {appt['appointmentID']}", key=f"confirm_{idx}")
-            reject_button = st.button(f"Reject {appt['appointmentID']}", key=f"reject_{idx}")
+            customer_name = "N/A"
+            referral_letter_link = "N/A"
+            if not customers_df.empty and customer_id:
+                # Find customer details using customerID
+                customer_row = customers_df[customers_df['customerID'] == str(customer_id)]
+                if not customer_row.empty:
+                    customer_name = customer_row['Full Name'].iloc[0] # Assuming 'Full Name' column
+                    referral_letter_link = customer_row.get('customerReferalLetter', 'N/A').iloc[0] # Assuming 'customerReferalLetter' column
 
-            if confirm_button:
-                update_appointment_status(appt['appointmentID'], "Confirmed")
-                st.success(f"Appointment {appt['appointmentID']} confirmed successfully!")
-                st.experimental_rerun()
+            st.markdown(f"---")
+            st.write(f"**Appointment ID:** {appt_id}")
+            st.write(f"**Customer Name:** {customer_name}")
+            st.write(f"**Requested Date:** {appt_date}")
+            st.write(f"**Requested Time:** {appt_time}")
+            st.write(f"**Current Status:** {appt_status}")
 
-            if reject_button:
-                rejection_reason = st.text_input(f"Rejection reason for {appt['appointmentID']}", key=f"reason_{idx}")
-                if st.button(f"Submit Rejection {appt['appointmentID']}", key=f"submit_rejection_{idx}"):
-                    update_appointment_status(appt['appointmentID'], "Rejected", rejection_reason=rejection_reason)
-                    st.success(f"Appointment {appt['appointmentID']} rejected successfully!")
+            if referral_letter_link and referral_letter_link != 'N/A':
+                st.markdown(f"**Referral Letter:** [View Letter]({referral_letter_link})")
+            else:
+                st.write("**Referral Letter:** Not provided or link unavailable.")
+
+            # Buttons for Confirm/Reject
+            col_confirm, col_reject = st.columns(2)
+            with col_confirm:
+                if st.button(f"Confirm {appt_id}", key=f"confirm_{appt_id}_{idx}"):
+                    update_appointment_status(appt_id, "Confirmed")
+                    st.success(f"Appointment {appt_id} confirmed successfully!")
                     st.experimental_rerun()
 
+            with col_reject:
+                if st.button(f"Reject {appt_id}", key=f"reject_{appt_id}_{idx}"):
+                    st.session_state[f'show_rejection_form_{appt_id}'] = True
+                    st.experimental_rerun()
 
+            # Rejection form (shown only if reject button is clicked)
+            if st.session_state.get(f'show_rejection_form_{appt_id}', False):
+                with st.form(key=f"rejection_form_{appt_id}_{idx}"):
+                    rejection_reason = st.text_area(
+                        f"Reason for rejecting appointment {appt_id} (optional):",
+                        key=f"reason_input_{appt_id}_{idx}"
+                    )
+                    col_submit_reject, col_cancel_reject = st.columns(2)
+                    with col_submit_reject:
+                        submit_rejection = st.form_submit_button(f"Submit Rejection for {appt_id}")
+                    with col_cancel_reject:
+                        cancel_rejection = st.form_submit_button(f"Cancel")
+
+                    if submit_rejection:
+                        update_appointment_status(appt_id, "Rejected", rejection_reason=rejection_reason)
+                        st.success(f"Appointment {appt_id} rejected successfully!")
+                        st.session_state[f'show_rejection_form_{appt_id}'] = False # Hide form
+                        st.experimental_rerun()
+                    elif cancel_rejection:
+                        st.session_state[f'show_rejection_form_{appt_id}'] = False # Hide form
+                        st.experimental_rerun()
+                        
 elif choice == "Logout":
     st.session_state.logged_in = False
     st.session_state.user_role = ''
