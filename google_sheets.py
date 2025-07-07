@@ -86,24 +86,27 @@ def update_schedule():
 
 # Update appointment status (reschedule or cancel)
 def update_appointment_status(appointment_id, new_status, new_date=None, new_time=None, rejection_reason=None):
-    worksheet = spreadsheet.worksheet("Appointments")
-    records = worksheet.get_all_records()
-    for idx, record in enumerate(records, start=2):  # Start at row 2 because row 1 is header
-        if str(record['appointmentID']) == str(appointment_id):
-            if new_status == "Rescheduled":
-                worksheet.update_acell(f"C{idx}", new_date)  # C = Date column
-                worksheet.update_acell(f"D{idx}", new_time)  # D = Time column
-                worksheet.update_acell(f"E{idx}", "Pending Confirmation")
-            elif new_status == "Cancelled":
-                worksheet.update_acell(f"E{idx}", "Cancelled")
-            elif new_status == "Confirmed":
-                worksheet.update_acell(f"E{idx}", "Confirmed")
-            elif new_status == "Rejected":
-                worksheet.update_acell(f"E{idx}", "Rejected")
-                if rejection_reason:
-                    worksheet.update_acell(f"F{idx}", rejection_reason)  # Optional: Assuming F is for reason
-            break
-
+        worksheet = spreadsheet.worksheet("Appointments")
+        records = worksheet.get_all_records()
+        for idx, record in enumerate(records, start=2):  # Start at row 2 because row 1 is header
+            if str(record['appointmentID']) == str(appointment_id):
+                if new_status == "Rescheduled":
+                    worksheet.update_acell(f"C{idx}", new_date)  # C = Date column
+                    worksheet.update_acell(f"D{idx}", new_time)  # D = Time column
+                    worksheet.update_acell(f"E{idx}", "Pending Confirmation")
+                elif new_status == "Cancelled":
+                    worksheet.update_acell(f"E{idx}", "Cancelled")
+                elif new_status == "Confirmed":
+                    worksheet.update_acell(f"E{idx}", "Confirmed")
+                elif new_status == "Rejected":
+                    worksheet.update_acell(f"E{idx}", "Rejected")
+                    # Ensure your Google Sheet has a column for rejection reason, e.g., column F
+                    if rejection_reason:
+                        worksheet.update_acell(f"F{idx}", rejection_reason)
+                    else: # Clear previous reason if none provided
+                        worksheet.update_acell(f"F{idx}", "")
+                break
+    
 def get_worksheet_data(sheet_name):
             """Reads all data from a specified worksheet and returns it as a Pandas DataFrame."""
             worksheet = spreadsheet.worksheet(sheet_name)
