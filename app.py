@@ -99,32 +99,82 @@ elif choice == "Book Appointment":
 
 elif choice == "My Appointments":
     st.subheader("My Appointments")
-    appointments = get_appointments()
-    my_appointments = [
-        appt for appt in appointments if str(appt['customerID']) == str(st.session_state.customer_id)
-    ]
+    appointments = get_appointments() # This fetches all appointments
+
+    # Ensure customer_id is correctly set and used for filtering
+    current_customer_id = st.session_state.customer_id
+    if not current_customer_id:
+        st.warning("Please log in as a customer to view your appointments.")
+        my_appointments = [] # No customer ID, no appointments to show
+    else:
+        # Filter appointments for the logged-in customer
+        # Ensure both sides of the comparison are treated as strings for robustness
+        my_appointments = [
+            appt for appt in appointments
+            if str(appt.get('customerID')) == str(current_customer_id)
+        ]
 
     if not my_appointments:
-        st.info("No appointments found.")
+        st.info("No appointments found for your account.")
     else:
+        st.write("Here are your appointments:")
         for idx, appt in enumerate(my_appointments):
-            st.write(f"Date: {appt['Date']}, Time: {appt['Time']}, Status: {appt['Status']}")
+            # Use .get() to safely access dictionary keys, providing a default if not found
+            appt_date = appt.get('Date', 'N/A')
+            appt_time = appt.get('Time', 'N/A')
+            appt_status = appt.get('Status', 'N/A')
+            appt_id = appt.get('appointmentID', f"appt_{idx}") # Use a fallback ID for keys
 
-            reschedule_button = st.button(f"Reschedule {appt['Date']} {appt['Time']}", key=f"reschedule_{idx}")
-            cancel_button = st.button(f"Cancel {appt['Date']} {appt['Time']}", key=f"cancel_{idx}")
+            st.markdown(f"---")
+            st.write(f"**Appointment ID:** {appt_id}")
+            st.write(f"**Date:** {appt_date}")
+            st.write(f"**Time:** {appt_time}")
+            st.write(f"**Status:** {appt_status}")
 
-            if reschedule_button:
-                new_date = st.date_input(f"Select new date for {appt['Date']} {appt['Time']}", key=f"new_date_{idx}")
-                new_time = st.selectbox(f"Select new time for {appt['Date']} {appt['Time']}", ["9:00AM", "11:00AM", "2:00PM", "4:00PM"], key=f"new_time_{idx}")
-                if st.button(f"Confirm Reschedule {appt['Date']} {appt['Time']}", key=f"confirm_{idx}"):
-                    update_appointment_status(appt['appointmentID'], "Rescheduled", str(new_date), new_time)
-                    st.success(f"Appointment rescheduled to {new_date} at {new_time}. Status: Pending Confirmation.")
+            # Reschedule and Cancel buttons
+            # Ensure unique keys for buttons, especially when iterating
+            reschedule_key = f"reschedule_{appt_id}_{idx}"
+            cancel_key = f"cancel_{appt_id}_{idx}"
+
+            col1, col2 = st.columns(2) # Use columns for better layout
+
+            with col1:
+                if st.button(f"Reschedule", key=reschedule_key):
+                    st.session_state[f'reschedule_active_{appt_id}'] = True
+                    st.session_state[f'cancel_active_{appt_id}'] = False # Deactivate cancel if reschedule is clicked
+                    st.experimental_rerun() # Rerun to show date/time pickers
+
+            with col2:
+                if st.button(f"Cancel", key=cancel_key):
+                    st.session_state[f'cancel_active_{appt_id}'] = True
+                    st.session_state[f'reschedule_active_{appt_id}'] = False # Deactivate reschedule if cancel is clicked
+                    st.experimental_rerun() # Rerun to confirm cancellation
+
+            # Reschedule form
+            if st.session_state.get(f'reschedule_active_{appt_id}', False):
+                st.markdown(f"**Reschedule Appointment {appt_id}:**")
+                new_date = st.date_input(f"Select new date for {appt_id}", value=pd.to_datetime(appt_date) if appt_date != 'N/A' else None, key=f"new_date_{appt_id}_{idx}")
+                new_time = st.selectbox(f"Select new time for {appt_id}", ["9:00AM", "11:00AM", "2:00PM", "4:00PM"], index=["9:00AM", "11:00AM", "2:00PM", "4:00PM"].index(appt_time) if appt_time != 'N/A' and appt_time in ["9:00AM", "11:00AM", "2:00PM", "4:00PM"] else 0, key=f"new_time_{appt_id}_{idx}")
+                if st.button(f"Confirm Reschedule for {appt_id}", key=f"confirm_reschedule_{appt_id}_{idx}"):
+                    update_appointment_status(appt_id, "Rescheduled", str(new_date), new_time)
+                    st.success(f"Appointment {appt_id} rescheduled to {new_date} at {new_time}. Status: Pending Confirmation.")
+                    st.session_state[f'reschedule_active_{appt_id}'] = False # Hide form after submission
                     st.experimental_rerun()
 
-            if cancel_button:
-                update_appointment_status(appt['appointmentID'], "Cancelled")
-                st.success("Appointment cancelled successfully!")
-                st.experimental_rerun()
+            # Cancel confirmation
+            if st.session_state.get(f'cancel_active_{appt_id}', False):
+                st.warning(f"Are you sure you want to cancel appointment {appt_id}?")
+                col_cancel_yes, col_cancel_no = st.columns(2)
+                with col_cancel_yes:
+                    if st.button(f"Yes, Cancel {appt_id}", key=f"confirm_cancel_{appt_id}_{idx}"):
+                        update_appointment_status(appt_id, "Cancelled")
+                        st.success(f"Appointment {appt_id} cancelled successfully!")
+                        st.session_state[f'cancel_active_{appt_id}'] = False # Hide form after submission
+                        st.experimental_rerun()
+                with col_cancel_no:
+                    if st.button(f"No, Keep {appt_id}", key=f"deny_cancel_{appt_id}_{idx}"):
+                        st.session_state[f'cancel_active_{appt_id}'] = False # Hide form
+                        st.experimental_rerun()
 
 elif choice == "Manage Schedule":
     st.subheader("Manage Appointments (Pharmacist)")
@@ -202,6 +252,7 @@ elif choice == "Manage Schedule":
                     elif cancel_rejection:
                         st.session_state[f'show_rejection_form_{appt_id}'] = False # Hide form
                         st.experimental_rerun()
+
                         
 elif choice == "Logout":
     st.session_state.logged_in = False
