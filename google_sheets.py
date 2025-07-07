@@ -119,3 +119,32 @@ def get_worksheet_data(sheet_name):
                     print(f"Error reading data from sheet '{sheet_name}': {e}")
                     return pd.DataFrame()
             return pd.DataFrame()
+
+    """Retrieves all available time slots from the Pharmacist_Schedules sheet."""
+    worksheet = spreadsheet.worksheet("Pharmacist_Schedules")
+    records = worksheet.get_all_records()
+    available_slots = []
+    for record in records:
+        # Only consider slots marked as "Available"
+        if record.get('Status') == "Available":
+            available_slots.append({
+                "ScheduleID": record.get("ScheduleID"),
+                "PharmacistUsername": record.get("PharmacistUsername"),
+                "Date": record.get("Date"),
+                "Time": record.get("Time"),
+                "Status": record.get("Status")
+            })
+    return available_slots
+def update_schedule_slot_status(schedule_id, new_status):
+    """Updates the status of a specific schedule slot (e.g., from Available to Booked)."""
+    worksheet = spreadsheet.worksheet("Pharmacist_Schedules")
+    records = worksheet.get_all_records()
+    for idx, record in enumerate(records, start=2):
+        if str(record['ScheduleID']) == str(schedule_id):
+            worksheet.update_acell(f"E{idx}", new_status) # Assuming 'Status' is column E
+            break
+# You might also want a function to get all schedule slots (not just available)
+def get_all_pharmacist_schedule_slots():
+    """Retrieves all time slots from the Pharmacist_Schedules sheet."""
+    worksheet = spreadsheet.worksheet("Pharmacist_Schedules")
+    return worksheet.get_all_records()
