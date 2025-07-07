@@ -104,4 +104,15 @@ def update_appointment_status(appointment_id, new_status, new_date=None, new_tim
                     worksheet.update_acell(f"F{idx}", rejection_reason)  # Optional: Assuming F is for reason
             break
 
-
+def get_worksheet_data(sheet_name):
+            """Reads all data from a specified worksheet and returns it as a Pandas DataFrame."""
+            worksheet = spreadsheet.worksheet(sheet_name)
+            if worksheet:
+                try:
+                    data = worksheet.get_all_records()
+                    df = pd.DataFrame(data)
+                    return df
+                except Exception as e:
+                    print(f"Error reading data from sheet '{sheet_name}': {e}")
+                    return pd.DataFrame()
+            return pd.DataFrame()
