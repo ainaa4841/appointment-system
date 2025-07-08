@@ -5,6 +5,8 @@ import json
 import streamlit as st
 import os
 import mimetypes
+from googleapiclient.http import MediaFileUpload
+
 
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 service_account_info = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT"])
