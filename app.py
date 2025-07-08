@@ -1,7 +1,7 @@
 import streamlit as st
 from auth import register_user, login_user, check_email_exists, check_password_complexity, get_customer_id
 from google_sheets import (
-    save_customer, save_appointment, save_file_metadata,
+    save_customer, save_appointment,
     get_appointments, get_pharmacist_schedule,
     update_schedule, update_appointment_status,
     get_all_customers,  save_report
@@ -96,14 +96,15 @@ elif choice == "Book Appointment":
             if not uploaded_file:
                 st.error("Please upload a referral letter.")
             else:
-                # Save file locally
                 if not os.path.exists("uploads"):
                     os.makedirs("uploads")
                 file_path = f"uploads/{uploaded_file.name}"
                 with open(file_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
 
-                file_link = f"uploads/{uploaded_file.name}"
+                from google_sheets import upload_to_drive
+                file_id = upload_to_drive(file_path)
+                file_link = f"https://drive.google.com/uc?export=download&id={file_id}"
 
                 save_appointment([
                     st.session_state.customer_id,
@@ -113,6 +114,8 @@ elif choice == "Book Appointment":
                 ], referral_path=file_link)
 
                 st.success(f"Appointment booked on {selected_date} at {selected_time}.")
+
+
 # --------------------------------------------
 # My Appointments
 elif choice == "My Appointments":
