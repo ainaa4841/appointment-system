@@ -8,7 +8,6 @@ from google_sheets import (
 )
 import os
 import pandas as pd
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 from collections import defaultdict
 
 st.set_page_config(page_title="Farmasi Pantai Hillpark", layout="wide")
