@@ -1,12 +1,18 @@
 import streamlit as st
 from auth import register_user, login_user, check_email_exists, check_password_complexity, get_customer_id
-from google_sheets import (
-    save_customer, save_appointment, save_file_metadata,
-    upload_to_drive, get_appointments, get_worksheet_data,
-    save_pharmacist_schedule_slot, get_pharmacist_available_slots,
-    update_schedule_slot_status, get_all_pharmacist_schedule_slots,
-    update_appointment_status
-)
+from google_sheets import save_customer
+from google_sheets import save_appointment
+from google_sheets import save_file_metadata
+from google_sheets import upload_to_drive
+from google_sheets import get_appointments
+from google_sheets import get_worksheet_data
+from google_sheets import save_pharmacist_schedule_slot
+from google_sheets import get_pharmacist_available_slots
+from google_sheets import update_schedule_slot_status
+from google_sheets import get_all_pharmacist_schedule_slots
+from google_sheets import update_appointment_status
+
+
 import os
 import pandas as pd
 
