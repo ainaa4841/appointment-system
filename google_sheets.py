@@ -1,94 +1,97 @@
 import gspread
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
+from google.oauth2.service_account import Credentials
 import streamlit as st
-import json
-import os
-from datetime import datetime
+import uuid
 
-# --- Setup ---
-credentials_dict = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT"])
-credentials = service_account.Credentials.from_service_account_info(
-    credentials_dict,
-    scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-)
-gc = gspread.authorize(credentials)
-sheet = gc.open_by_key(st.secrets["SPREADSHEET_ID"])
+# --- Setup Credentials ---
+SERVICE_ACCOUNT_INFO = st.secrets["GOOGLE_SERVICE_ACCOUNT"]
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
-drive_service = build("drive", "v3", credentials=credentials)
+creds = Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO, scopes=SCOPES)
+client = gspread.authorize(creds)
 
-# --- Sheet Helpers ---
-def get_worksheet(name):
-    return sheet.worksheet(name)
+SPREADSHEET_ID = st.secrets["SPREADSHEET_ID"]
+FOLDER_ID = st.secrets["FOLDER_ID"]
+spreadsheet = client.open_by_key(SPREADSHEET_ID)
 
-def get_worksheet_data(name):
-    return get_worksheet(name).get_all_records()
+# --- Sheet Getters ---
+def get_sheet(name):
+    return spreadsheet.worksheet(name)
+
+def get_worksheet_data(sheet_name):
+    worksheet = get_sheet(sheet_name)
+    records = worksheet.get_all_records()
+    return records
 
 # --- Save Customer ---
 def save_customer(data):
-    ws = get_worksheet("Customers")
-    records = ws.get_all_records()
-    next_id = len(records) + 1
-    ws.append_row([next_id] + data)
-    return next_id
+    ws = get_sheet("Customers")
+    customer_id = str(len(ws.get_all_values()))
+    ws.append_row([customer_id] + data)
+    return customer_id
 
-# --- Upload File to Drive ---
-def upload_to_drive(file_path):
+# --- Upload to Google Drive ---
+def upload_to_drive(local_file_path):
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaFileUpload
+
+    creds_drive = Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO, scopes=["https://www.googleapis.com/auth/drive"])
+    drive_service = build('drive', 'v3', credentials=creds_drive)
+
     file_metadata = {
-        "name": os.path.basename(file_path),
-        "parents": [st.secrets["FOLDER_ID"]]
+        'name': local_file_path.split("/")[-1],
+        'parents': [FOLDER_ID]
     }
-    media = MediaFileUpload(file_path, resumable=True)
-    uploaded_file = drive_service.files().create(
-        body=file_metadata, media_body=media, fields="id"
-    ).execute()
-    return uploaded_file.get("id")
+    media = MediaFileUpload(local_file_path, resumable=True)
+    uploaded = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
 
-def save_file_metadata(data):
-    get_worksheet("Files").append_row(data)
+    return uploaded.get('id')
 
-# --- Appointment ---
+# --- Save Appointment ---
 def save_appointment(data):
-    ws = get_worksheet("Appointments")
-    records = ws.get_all_records()
-    next_id = len(records) + 1
-    ws.append_row([next_id] + data)
+    ws = get_sheet("Appointments")
+    appointment_id = str(len(ws.get_all_values()))
+    ws.append_row([appointment_id] + data)
 
+# --- Get Appointments ---
 def get_appointments():
-    ws = get_worksheet("Appointments")
+    ws = get_sheet("Appointments")
     data = ws.get_all_records()
     return data
 
-def update_appointment_status(appointment_id, new_status):
-    ws = get_worksheet("Appointments")
-    data = ws.get_all_values()
-    headers = data[0]
-    for i, row in enumerate(data[1:], start=2):
-        if str(row[0]) == str(appointment_id):
-            status_col = headers.index("Status") + 1
-            ws.update_cell(i, status_col, new_status)
-            break
+# --- Update Appointment Status ---
+def update_appointment_status(appointment_id, new_status, rejection_reason=""):
+    ws = get_sheet("Appointments")
+    all_data = ws.get_all_values()
 
-# --- Pharmacist Schedule ---
+    header = all_data[0]
+    for i, row in enumerate(all_data[1:], start=2):  # Skip header row
+        if row[0] == str(appointment_id):
+            status_col = header.index("Status")
+            ws.update_cell(i, status_col + 1, new_status)
+            return
+
+# --- Pharmacist Schedule Management ---
 def save_pharmacist_schedule_slot(data):
-    ws = get_worksheet("PharmacistSchedule")
-    records = ws.get_all_records()
-    next_id = len(records) + 1
-    ws.append_row([next_id] + data)
+    ws = get_sheet("PharmacistSchedule")
+    schedule_id = str(uuid.uuid4())[:8]
+    ws.append_row([schedule_id] + data)
 
 def get_pharmacist_available_slots():
-    ws = get_worksheet("PharmacistSchedule")
-    return [r for r in ws.get_all_records() if r["Status"] == "Available"]
-
-def get_all_pharmacist_schedule_slots():
-    return get_worksheet("PharmacistSchedule").get_all_records()
+    ws = get_sheet("PharmacistSchedule")
+    rows = ws.get_all_records()
+    return [r for r in rows if r['Status'] == 'Available']
 
 def update_schedule_slot_status(schedule_id, new_status):
-    ws = get_worksheet("PharmacistSchedule")
+    ws = get_sheet("PharmacistSchedule")
     data = ws.get_all_values()
-    headers = data[0]
-    for i, row in enumerate(data[1:], start=2):
-        if str(row[0]) == str(schedule_id):
-            status_col = headers.index("Status") + 1
-            ws.update_cell(i, status_col, new_status)
-            break
+    header = data[0]
+
+    for i, row in enumerate(data[1:], start=2):  # Skip header
+        if row[0] == schedule_id:
+            status_col = header.index("Status")
+            ws.update_cell(i, status_col + 1, new_status)
+            return
+
+def get_all_pharmacist_schedule_slots():
+    return get_sheet("PharmacistSchedule").get_all_records()
