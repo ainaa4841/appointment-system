@@ -5,11 +5,14 @@ import json
 import streamlit as st
 import os
 
+
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 service_account_info = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT"])
 creds = Credentials.from_service_account_info(service_account_info, scopes=scope)
 client = gspread.authorize(creds)
 spreadsheet = client.open_by_key(st.secrets["SPREADSHEET_ID"])
+FOLDER_ID = st.secrets["FOLDER_ID"]
+
 
 def generate_next_id(sheet, col_name):
     records = spreadsheet.worksheet(sheet).get_all_records()
