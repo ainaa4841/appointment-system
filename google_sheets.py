@@ -1,99 +1,91 @@
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-import uuid
+import streamlit as st
+import json
+import os
+from datetime import datetime
 
-# --- Google Sheets & Drive Setup ---
-scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
-creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
-client = gspread.authorize(creds)
+# --- Setup ---
+credentials_dict = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT"])
+credentials = service_account.Credentials.from_service_account_info(
+    credentials_dict,
+    scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+)
+gc = gspread.authorize(credentials)
+sheet = gc.open_by_key(st.secrets["SPREADSHEET_ID"])
 
-spreadsheet = client.open("PharmacyAppointmentSystem")
-customers_sheet = spreadsheet.worksheet("Customers")
-appointments_sheet = spreadsheet.worksheet("Appointments")
-schedules_sheet = spreadsheet.worksheet("PharmacistSchedules")
-files_sheet = spreadsheet.worksheet("Files")
+drive_service = build("drive", "v3", credentials=credentials)
 
-# --- Drive API for file uploads ---
-drive_service = build('drive', 'v3', credentials=creds)
+# --- Sheet Helpers ---
+def get_worksheet(name):
+    return sheet.worksheet(name)
 
-def upload_to_drive(filepath):
+def get_worksheet_data(name):
+    return get_worksheet(name).get_all_records()
+
+# --- Save Customer ---
+def save_customer(data):
+    ws = get_worksheet("Customers")
+    records = ws.get_all_records()
+    next_id = len(records) + 1
+    ws.append_row([next_id] + data)
+    return next_id
+
+# --- Upload File to Drive ---
+def upload_to_drive(file_path):
     file_metadata = {
-        'name': filepath.split("/")[-1],
-        'parents': ['YOUR_FOLDER_ID']  # <-- Replace with actual folder ID
+        "name": os.path.basename(file_path),
+        "parents": [st.secrets["FOLDER_ID"]]
     }
-    media = MediaFileUpload(filepath, resumable=True)
-    file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-    return file.get("id")
+    media = MediaFileUpload(file_path, resumable=True)
+    uploaded_file = drive_service.files().create(
+        body=file_metadata, media_body=media, fields="id"
+    ).execute()
+    return uploaded_file.get("id")
 
 def save_file_metadata(data):
-    files_sheet.append_row(data)
+    get_worksheet("Files").append_row(data)
 
-# --- Customer handling ---
-def save_customer(data):
-    customer_id = str(uuid.uuid4())
-    customers_sheet.append_row([customer_id] + data + [""])  # Final "" for old referral column (no longer used)
-    return customer_id
-
-# --- Appointment handling ---
+# --- Appointment ---
 def save_appointment(data):
-    appointment_id = str(uuid.uuid4())
-    appointments_sheet.append_row([appointment_id] + data)
+    ws = get_worksheet("Appointments")
+    records = ws.get_all_records()
+    next_id = len(records) + 1
+    ws.append_row([next_id] + data)
 
 def get_appointments():
-    rows = appointments_sheet.get_all_values()
-    headers = rows[0]
-    return [dict(zip(headers, row)) for row in rows[1:]]
+    ws = get_worksheet("Appointments")
+    data = ws.get_all_records()
+    return data
 
-def update_appointment_status(appointment_id, new_status, rejection_reason=""):
-    all_data = appointments_sheet.get_all_values()
-    headers = all_data[0]
-
-    id_idx = headers.index("appointmentID")
-    status_idx = headers.index("Status")
-    reason_idx = headers.index("RejectionReason")
-
-    for i, row in enumerate(all_data[1:], start=2):
-        if row[id_idx] == appointment_id:
-            appointments_sheet.update_cell(i, status_idx + 1, new_status)
-            appointments_sheet.update_cell(i, reason_idx + 1, rejection_reason)
+def update_appointment_status(appointment_id, new_status):
+    ws = get_worksheet("Appointments")
+    data = ws.get_all_values()
+    headers = data[0]
+    for i, row in enumerate(data[1:], start=2):
+        if str(row[0]) == str(appointment_id):
+            status_col = headers.index("Status") + 1
+            ws.update_cell(i, status_col, new_status)
             break
 
-# --- Pharmacist Schedule Management ---
+# --- Pharmacist Schedule ---
 def save_pharmacist_schedule_slot(data):
-    schedule_id = str(uuid.uuid4())
-    schedules_sheet.append_row([schedule_id] + data)
+    ws = get_worksheet("PharmacistSchedule")
+    records = ws.get_all_records()
+    next_id = len(records) + 1
+    ws.append_row([next_id] + data)
 
 def get_pharmacist_available_slots():
-    rows = schedules_sheet.get_all_values()
-    headers = rows[0]
-    result = []
-    for row in rows[1:]:
-        slot = dict(zip(headers, row))
-        if slot["Status"] == "Available":
-            result.append(slot)
-    return result
+    ws = get_worksheet("PharmacistSchedule")
+    return [r for r in ws.get_all_records() if r["Status"] == "Available"]
 
 def get_all_pharmacist_schedule_slots():
-    rows = schedules_sheet.get_all_values()
-    headers = rows[0]
-    return [dict(zip(headers, row)) for row in rows[1:]]
+    return get_worksheet("PharmacistSchedule").get_all_records()
 
 def update_schedule_slot_status(schedule_id, new_status):
-    rows = schedules_sheet.get_all_values()
-    headers = rows[0]
-    id_idx = headers.index("ScheduleID")
-    status_idx = headers.index("Status")
-
-    for i, row in enumerate(rows[1:], start=2):
-        if row[id_idx] == schedule_id:
-            schedules_sheet.update_cell(i, status_idx + 1, new_status)
-            break
-
-# --- Utility ---
-def get_worksheet_data(sheet_name):
-    ws = spreadsheet.worksheet(sheet_name)
-    rows = ws.get_all_values()
-    headers = rows[0]
-    return [dict(zip(headers, row)) for row in rows[1:]]
+    ws = get_worksheet("PharmacistSchedule")
+    data = ws.get_all_values()
+    headers = data[0]
+    for i, row in enumerate(data[1:], start=2):
+        if str(row[0]) == str(sch
