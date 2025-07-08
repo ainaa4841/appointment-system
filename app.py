@@ -1,7 +1,7 @@
 import streamlit as st
 from auth import register_user, login_user, check_email_exists, check_password_complexity, get_customer_id
 from google_sheets import (
-    save_customer, save_appointment,
+    save_customer, upload_to_drive, save_appointment,
     get_appointments, get_pharmacist_schedule,
     update_schedule, update_appointment_status,
     get_all_customers,  save_report
