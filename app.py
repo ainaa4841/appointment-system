@@ -278,7 +278,6 @@ elif choice == "Manage Schedule":
             header[2].markdown("**📧 Contact**")
             header[3].markdown("**📅 Date**")
             header[4].markdown("**🕒 Time**")
-            header[5].markdown("**📄 Referral Letter**")
             header[6].markdown("**📌 Status**")
             
             for appt in past_appts:
@@ -297,13 +296,7 @@ elif choice == "Manage Schedule":
                 cols[2].markdown(f"{email}<br>{phone}", unsafe_allow_html=True)
                 cols[3].write(f"{appt['Date']}")
                 cols[4].write(f"{appt['Time']}")
-                cols[5].markdown(f"[📄 Download]({referral_link})" if referral_link else "—", unsafe_allow_html=True)
                 cols[6].write(f"{appt['Status']}")
-                
-               
-
-
-
 
 # --------------------------------------------
 # Update Slot Availability
