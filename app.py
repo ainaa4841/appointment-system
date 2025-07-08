@@ -98,22 +98,22 @@ elif choice == "Book Appointment":
             else:
                 if not os.path.exists("uploads"):
                     os.makedirs("uploads")
+
+                # Save the uploaded file locally
                 file_path = f"uploads/{uploaded_file.name}"
                 with open(file_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
 
-                from google_sheets import upload_to_drive
-                file_id = upload_to_drive(file_path)
-                file_link = f"https://drive.google.com/uc?export=download&id={file_id}"
-
+                # Save appointment with referral path
                 save_appointment([
                     st.session_state.customer_id,
                     selected_date,
                     selected_time,
                     "Pending Confirmation"
-                ], referral_path=file_link)
+                ], referral_path=file_path)
 
                 st.success(f"Appointment booked on {selected_date} at {selected_time}.")
+
 
 
 # --------------------------------------------
@@ -218,7 +218,7 @@ elif choice == "Manage Schedule":
             full_name = cust.get("Full Name", "Unknown")
             email = cust.get("Email", "N/A")
             phone = cust.get("Phone Number", "N/A")
-            referral_link = appt.get("appointmentReferralLetter", "")
+            referral_path = appt.get("appointmentReferralLetter", "")
 
             st.markdown(f"""
                 <div style="border: 1px solid #ccc; padding: 1px; border-radius: 6px; margin-bottom: 10px; background-color: #f9f9f9;">
@@ -230,8 +230,21 @@ elif choice == "Manage Schedule":
             cols[2].write(f"📧 {email}\n\n📱 {phone}")
             cols[3].write(f"📅 {appt['Date']}")
             cols[4].write(f"🕒 {appt['Time']}")
-            cols[5].markdown(f"[📄 Letter]({referral_link})" if referral_link else "—", unsafe_allow_html=True)
 
+            # 📄 Referral download button
+            if referral_path and os.path.exists(referral_path):
+                with open(referral_path, "rb") as f:
+                    cols[5].download_button(
+                        label="📄 Download Letter",
+                        data=f,
+                        file_name=os.path.basename(referral_path),
+                        mime="application/octet-stream",
+                        key=f"download_{idx}"
+                    )
+            else:
+                cols[5].write("—")
+
+            # ✅ Update status
             new_status = cols[6].selectbox(
                 "Status",
                 ["Pending Confirmation", "Confirmed", "Cancelled", "Completed"],
@@ -244,10 +257,7 @@ elif choice == "Manage Schedule":
                 st.success(f"✅ Appointment {appt['appointmentID']} updated.")
                 st.rerun()
 
-         
-
             st.markdown("</div>", unsafe_allow_html=True)
-
 
         # --------------------
         # Section 2: Past Appointments
