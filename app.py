@@ -18,11 +18,13 @@ import pandas as pd
 
 st.set_page_config(page_title="Farmasi Pantai Hillpark", layout="wide")
 
-try:
-    with open("MultipleFiles/style.css") as f:
+import pathlib
+
+css_path = pathlib.Path("css/style.css")
+if css_path.exists():
+    with open(css_path) as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-except FileNotFoundError:
-    st.warning("CSS file not found.")
+
 
 st.title("Farmasi Pantai Hillpark Appointment System")
 
