@@ -36,13 +36,7 @@ def save_file_metadata(data):
     ws = spreadsheet.worksheet("Files")
     ws.append_row(data)
 
-def update_customer_referral_letter(username, link):
-    ws = spreadsheet.worksheet("Customers")
-    records = ws.get_all_records()
-    for idx, row in enumerate(records, start=2):
-        if row["customerUsername"] == username:
-            ws.update_acell(f"G{idx}", link)
-            break
+
 
 def get_appointments():
     ws = spreadsheet.worksheet("Appointments")
