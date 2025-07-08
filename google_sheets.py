@@ -1,97 +1,109 @@
 import gspread
 from google.oauth2.service_account import Credentials
+import json
 import streamlit as st
-import uuid
+import os
 
-# --- Setup Credentials ---
-SERVICE_ACCOUNT_INFO = st.secrets["GOOGLE_SERVICE_ACCOUNT"]
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-
-creds = Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO, scopes=SCOPES)
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+service_account_info = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT"])
+creds = Credentials.from_service_account_info(service_account_info, scopes=scope)
 client = gspread.authorize(creds)
+spreadsheet = client.open_by_key(st.secrets["SPREADSHEET_ID"])
 
-SPREADSHEET_ID = st.secrets["SPREADSHEET_ID"]
-FOLDER_ID = st.secrets["FOLDER_ID"]
-spreadsheet = client.open_by_key(SPREADSHEET_ID)
+def generate_next_id(sheet, col_name):
+    records = spreadsheet.worksheet(sheet).get_all_records()
+    if not records: return 1
+    return int(records[-1][col_name]) + 1
 
-# --- Sheet Getters ---
-def get_sheet(name):
-    return spreadsheet.worksheet(name)
-
-def get_worksheet_data(sheet_name):
-    worksheet = get_sheet(sheet_name)
-    records = worksheet.get_all_records()
-    return records
-
-# --- Save Customer ---
 def save_customer(data):
-    ws = get_sheet("Customers")
-    customer_id = str(len(ws.get_all_values()))
-    ws.append_row([customer_id] + data)
-    return customer_id
+    ws = spreadsheet.worksheet("Customers")
+    cid = generate_next_id("Customers", "customerID")
+    ws.append_row([cid] + data)
+    return cid
 
-# --- Upload to Google Drive ---
-def upload_to_drive(local_file_path):
-    from googleapiclient.discovery import build
-    from googleapiclient.http import MediaFileUpload
+def save_appointment(data, referral_path=None):
+    worksheet = spreadsheet.worksheet("Appointments")
+    appointment_id = generate_next_id("Appointments", "appointmentID")
+    if referral_path is None:
+        referral_path = ""
+    worksheet.append_row([appointment_id] + data + [referral_path])  # Add referral path to appointment
+    remove_schedule_slot(data[1], data[2])  # data[1] = date, data[2] = time
 
-    creds_drive = Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO, scopes=["https://www.googleapis.com/auth/drive"])
-    drive_service = build('drive', 'v3', credentials=creds_drive)
 
-    file_metadata = {
-        'name': local_file_path.split("/")[-1],
-        'parents': [FOLDER_ID]
-    }
-    media = MediaFileUpload(local_file_path, resumable=True)
-    uploaded = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
 
-    return uploaded.get('id')
 
-# --- Save Appointment ---
-def save_appointment(data):
-    ws = get_sheet("Appointments")
-    appointment_id = str(len(ws.get_all_values()))
-    ws.append_row([appointment_id] + data)
+def save_file_metadata(data):
+    ws = spreadsheet.worksheet("Files")
+    ws.append_row(data)
 
-# --- Get Appointments ---
+def update_customer_referral_letter(username, link):
+    ws = spreadsheet.worksheet("Customers")
+    records = ws.get_all_records()
+    for idx, row in enumerate(records, start=2):
+        if row["customerUsername"] == username:
+            ws.update_acell(f"G{idx}", link)
+            break
+
 def get_appointments():
-    ws = get_sheet("Appointments")
-    data = ws.get_all_records()
-    return data
+    ws = spreadsheet.worksheet("Appointments")
+    return ws.get_all_records()
 
-# --- Update Appointment Status ---
-def update_appointment_status(appointment_id, new_status, rejection_reason=""):
-    ws = get_sheet("Appointments")
-    all_data = ws.get_all_values()
+def update_schedule(date, time):
+    ws = spreadsheet.worksheet("Schedules")
+    ws.append_row([date, time])
 
-    header = all_data[0]
-    for i, row in enumerate(all_data[1:], start=2):  # Skip header row
-        if row[0] == str(appointment_id):
-            status_col = header.index("Status")
-            ws.update_cell(i, status_col + 1, new_status)
+def get_pharmacist_schedule():
+    return spreadsheet.worksheet("Schedules").get_all_records()
+
+def update_appointment_status(appointment_id, new_status, new_date=None, new_time=None):
+    worksheet = spreadsheet.worksheet("Appointments")
+    records = worksheet.get_all_records()
+    for idx, record in enumerate(records, start=2):  # Row 2 = data starts
+        if str(record["appointmentID"]) == str(appointment_id):
+            if new_status == "Cancelled":
+                worksheet.update_acell(f"E{idx}", "Cancelled")
+                restore_schedule_slot(record["Date"], record["Time"])
+            elif new_status == "Rescheduled":
+                old_date, old_time = record["Date"], record["Time"]
+                worksheet.update_acell(f"C{idx}", new_date)
+                worksheet.update_acell(f"D{idx}", new_time)
+                worksheet.update_acell(f"E{idx}", "Pending Confirmation")
+                restore_schedule_slot(old_date, old_time)
+                remove_schedule_slot(new_date, new_time)
+            else:
+                worksheet.update_acell(f"E{idx}", new_status)
+            break
+
+
+def get_all_customers():
+    return spreadsheet.worksheet("Customers").get_all_records()
+
+def save_report(data):
+    ws = spreadsheet.worksheet("Reports")
+    rid = generate_next_id("Reports", "reportID")
+    ws.append_row([rid] + data)
+
+def remove_schedule_slot(date, time):
+    worksheet = spreadsheet.worksheet("Schedules")
+    records = worksheet.get_all_records()
+    date = str(date).strip().lower()
+    time = str(time).strip().lower()
+
+    for idx, record in enumerate(records, start=2):
+        rec_date = str(record["Date"]).strip().lower()
+        rec_time = str(record["Time"]).strip().lower()
+        if rec_date == date and rec_time == time:
+            worksheet.delete_rows(idx)
             return
+    print(f"[DEBUG] Slot not found for deletion: {date} - {time}")
 
-# --- Pharmacist Schedule Management ---
-def save_pharmacist_schedule_slot(data):
-    ws = get_sheet("PharmacistSchedule")
-    schedule_id = str(uuid.uuid4())[:8]
-    ws.append_row([schedule_id] + data)
 
-def get_pharmacist_available_slots():
-    ws = get_sheet("PharmacistSchedule")
-    rows = ws.get_all_records()
-    return [r for r in rows if r['Status'] == 'Available']
-
-def update_schedule_slot_status(schedule_id, new_status):
-    ws = get_sheet("PharmacistSchedule")
-    data = ws.get_all_values()
-    header = data[0]
-
-    for i, row in enumerate(data[1:], start=2):  # Skip header
-        if row[0] == schedule_id:
-            status_col = header.index("Status")
-            ws.update_cell(i, status_col + 1, new_status)
-            return
-
-def get_all_pharmacist_schedule_slots():
-    return get_sheet("PharmacistSchedule").get_all_records()
+def restore_schedule_slot(date, time):
+    worksheet = spreadsheet.worksheet("Schedules")
+    records = worksheet.get_all_records()
+    for record in records:
+        rec_date = str(record["Date"]).strip().lower()
+        rec_time = str(record["Time"]).strip().lower()
+        if rec_date == str(date).strip().lower() and rec_time == str(time).strip().lower():
+            return  # already exists
+    worksheet.append_row([date, time])
