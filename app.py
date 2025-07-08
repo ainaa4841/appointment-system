@@ -1,24 +1,25 @@
 import streamlit as st
 from auth import register_user, login_user, check_email_exists, check_password_complexity, get_customer_id
 from google_sheets import (
-    save_customer, save_appointment, upload_to_drive, get_appointments, get_worksheet_data,
-    save_pharmacist_schedule_slot, get_pharmacist_available_slots,
-    update_schedule_slot_status, get_all_pharmacist_schedule_slots,
-    update_appointment_status
+    save_customer, save_appointment, save_file_metadata,
+    get_appointments, get_pharmacist_schedule,
+    update_schedule, update_appointment_status,
+    get_all_customers, update_customer_referral_letter, save_report
 )
 import os
 import pandas as pd
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+from collections import defaultdict
 
 st.set_page_config(page_title="Farmasi Pantai Hillpark", layout="wide")
 
-try:
-    with open("css/style.css") as f:
-        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-except FileNotFoundError:
-    st.warning("CSS file not found.")
+# Load CSS
+with open("css/style.css") as f:
+    st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
 st.title("Farmasi Pantai Hillpark Appointment System")
 
+# Session defaults
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.user_role = ''
@@ -26,17 +27,18 @@ if 'logged_in' not in st.session_state:
     st.session_state.user_email = ''
     st.session_state.customer_id = ''
 
-# Menu
 menu = ["Login", "Register"]
 if st.session_state.logged_in:
+    menu = ["Logout"]
     if st.session_state.user_role == 'Customer':
         menu = ["Book Appointment", "My Appointments", "Logout"]
     elif st.session_state.user_role == 'Pharmacist':
-        menu = ["Manage Pending Appointments", "Set Availability", "View My Schedule", "Logout"]
+        menu = ["Manage Schedule", "Update Slot Availability", "Add Report", "Logout"]
 
 choice = st.sidebar.selectbox("Menu", menu)
 
-# ---------------- Registration ----------------
+# --------------------------------------------
+# Register
 if choice == "Register":
     st.subheader("Customer Registration")
     username = st.text_input("Username")
@@ -49,15 +51,16 @@ if choice == "Register":
         if not all([username, password, full_name, email, phone]):
             st.error("Please fill in all required fields.")
         elif not check_password_complexity(password):
-            st.error("Password must be at least 8 characters with a special character.")
+            st.error("Password must be at least 8 characters and contain a special character.")
         elif check_email_exists(email):
-            st.error("Email already exists.")
+            st.error("Email already exists. Please use a different email or login.")
         else:
             register_user(username, password, "Customer", email)
-            customer_id = save_customer([username, password, full_name, email, phone])
-            st.success(f"Registered! Your ID: {customer_id}")
+            customer_id = save_customer([username, password, full_name, email, phone, ""])
+            st.success(f"Registration successful! Your customer ID is {customer_id}. Please log in.")
 
-# ---------------- Login ----------------
+# --------------------------------------------
+# Login
 elif choice == "Login":
     st.subheader("Login")
     username_or_email = st.text_input("Username or Email")
@@ -72,135 +75,274 @@ elif choice == "Login":
             st.session_state.user_email = email
             if role == "Customer":
                 st.session_state.customer_id = get_customer_id(username)
-            st.experimental_rerun()
+            st.rerun()
         else:
-            st.error("Invalid credentials.")
+            st.error("Invalid credentials!")
 
-# ---------------- Book Appointment ----------------
+# --------------------------------------------
+# Book Appointment
 elif choice == "Book Appointment":
     st.subheader("Book an Appointment")
-    available_slots = get_pharmacist_available_slots()
-
-    if not available_slots:
-        st.info("No slots available.")
+    available_schedule = get_pharmacist_schedule()
+    if not available_schedule:
+        st.warning("No available slots. Please try again later.")
     else:
-        display_options = [
-            f"{slot['Date']} {slot['Time']} (Pharmacist: {slot['PharmacistUsername']})"
-            for slot in available_slots
-        ]
-        selected_index = st.selectbox("Select slot", range(len(display_options)), format_func=lambda i: display_options[i])
-        selected_slot = available_slots[selected_index]
-
-        st.write(f"Selected: {selected_slot['Date']} at {selected_slot['Time']} with {selected_slot['PharmacistUsername']}")
-
-        uploaded_file = st.file_uploader("Upload Referral Letter", type=["pdf", "jpg", "png"])
+        available_dates = sorted(set(slot["Date"] for slot in available_schedule))
+        selected_date = st.selectbox("Select Date", available_dates)
+        available_times = [slot["Time"] for slot in available_schedule if slot["Date"] == selected_date]
+        selected_time = st.selectbox("Select Time Slot", available_times)
+        uploaded_file = st.file_uploader("Upload Referral Letter")
 
         if st.button("Book Appointment"):
             if not uploaded_file:
-                st.error("Please upload referral letter.")
+                st.error("Please upload a referral letter.")
             else:
+                # Save file locally
                 if not os.path.exists("uploads"):
                     os.makedirs("uploads")
                 file_path = f"uploads/{uploaded_file.name}"
                 with open(file_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
 
-                file_id = upload_to_drive(file_path)
-                file_link = f"https://drive.google.com/uc?export=download&id={file_id}"
+                file_link = f"uploads/{uploaded_file.name}"
+                save_file_metadata([st.session_state.user_username, uploaded_file.name, file_link])
+                update_customer_referral_letter(st.session_state.user_username, file_link)
 
-                appointment_data = [
+                save_appointment([
                     st.session_state.customer_id,
-                    selected_slot['PharmacistUsername'],
-                    selected_slot['Date'],
-                    selected_slot['Time'],
-                    "Pending Confirmation",
-                    file_link
-                ]
-                save_appointment(appointment_data)
-                update_schedule_slot_status(selected_slot['ScheduleID'], "Booked")
-
-                st.success("Appointment booked. Await pharmacist confirmation.")
-                st.experimental_rerun()
-
-# ---------------- My Appointments ----------------
+                    selected_date,
+                    selected_time,
+                    "Pending Confirmation"
+                ], referral_path=file_link)
+                st.success(f"Appointment booked on {selected_date} at {selected_time}.")
+# --------------------------------------------
+# My Appointments
 elif choice == "My Appointments":
-    st.subheader("My Appointments")
-    appointments = get_appointments()
-    my_appts = [a for a in appointments if a['customerID'] == st.session_state.customer_id]
+    st.subheader("📋 My Appointments")
 
-    if not my_appts:
-        st.info("No appointments.")
+    appointments = get_appointments()
+    my_appointments = [
+        appt for appt in appointments
+        if str(appt.get('customerID')) == str(st.session_state.customer_id)
+    ]
+
+    if not my_appointments:
+        st.info("No appointments found.")
     else:
-        for appt in my_appts:
+        active_appts = [appt for appt in my_appointments if appt['Status'] in ["Pending Confirmation", "Confirmed", "Rescheduled"]]
+        past_appts = [appt for appt in my_appointments if appt['Status'] in ["Cancelled", "Completed"]]
+
+        # --------------------
+        # Section 1: Active
+        st.markdown("### 🗓️ Upcoming Appointments")
+        for idx, appt in enumerate(active_appts):
+            cols = st.columns([2, 2, 2, 2, 2])
+            cols[0].write(f"📅 **{appt['Date']}**")
+            cols[1].write(f"🕒 **{appt['Time']}**")
+            cols[2].write(f"📌 **{appt['Status']}**")
+
+            # RESCHEDULE BUTTON
+            if cols[3].button("Reschedule", key=f"reschedule_{idx}"):
+                with st.form(f"reschedule_form_{idx}"):
+                    st.subheader(f"Reschedule Slot for {appt['Date']} {appt['Time']}")
+                    schedule = get_pharmacist_schedule()
+                    booked = [(a['Date'], a['Time']) for a in get_appointments()]
+                    available_slots = [
+                        s for s in schedule if (s['Date'], s['Time']) not in booked
+                    ]
+
+                    dates = sorted(list(set([s['Date'] for s in available_slots])))
+                    new_date = st.selectbox("New Date", dates)
+                    new_times = [s['Time'] for s in available_slots if s['Date'] == new_date]
+                    new_time = st.selectbox("New Time", new_times)
+
+                    submitted = st.form_submit_button("Confirm Reschedule")
+                    if submitted:
+                        update_appointment_status(
+                            appointment_id=appt["appointmentID"],
+                            new_status="Rescheduled",
+                            new_date=new_date,
+                            new_time=new_time
+                        )
+                        st.success("Rescheduled successfully!")
+                        st.rerun()
+
+            # CANCEL BUTTON
+            if cols[4].button("❌ Cancel", key=f"cancel_{idx}"):
+                update_appointment_status(
+                    appointment_id=appt["appointmentID"],
+                    new_status="Cancelled"
+                )
+                st.success("❌ Appointment cancelled.")
+                st.rerun()
+
+        # --------------------
+        # Section 2: Past Appointments
+        if past_appts:
             st.markdown("---")
-            st.write(f"**Date:** {appt['Date']} at {appt['Time']}")
-            st.write(f"**Pharmacist:** {appt['PharmacistUsername']}")
-            st.write(f"**Status:** {appt['Status']}")
-            if appt['Status'] == "Rejected" and appt.get('RejectionReason'):
-                st.error(f"Reason: {appt['RejectionReason']}")
-            if appt.get('appointmentReferralLetter'):
-                st.markdown(f"[Download Referral Letter]({appt['appointmentReferralLetter']})")
+            st.markdown("### 📋 Past Appointments (Cancelled or Completed)")
 
-# ---------------- Manage Pending Appointments ----------------
-elif choice == "Manage Pending Appointments":
-    st.subheader("Pending Appointments")
+            header = st.columns([2, 2, 2])
+            header[0].markdown("**📅 Date**")
+            header[1].markdown("**🕒 Time**")
+            header[2].markdown("**📌 Status**")
+
+            for appt in past_appts:
+                row = st.columns([2, 2, 2])
+                row[0].write(f"{appt['Date']}")
+                row[1].write(f"{appt['Time']}")
+                row[2].write(f"{appt['Status']}")
+
+
+# --------------------------------------------
+# Manage Schedule
+elif choice == "Manage Schedule":
+    st.subheader("Pharmacist: Manage Appointments & Availability")
+
     appointments = get_appointments()
-    pending = [a for a in appointments if a['Status'] == "Pending Confirmation" and a['PharmacistUsername'] == st.session_state.user_username]
+    customers = {str(c["customerID"]): c for c in get_all_customers()}
 
-    for appt in pending:
-        st.markdown("---")
-        st.write(f"**Appointment ID:** {appt['appointmentID']}")
-        st.write(f"**Date/Time:** {appt['Date']} at {appt['Time']}")
-        st.write(f"**Customer ID:** {appt['customerID']}")
-        if appt.get("appointmentReferralLetter"):
-            st.markdown(f"[Download Referral Letter]({appt['appointmentReferralLetter']})")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button(f"Confirm {appt['appointmentID']}"):
-                update_appointment_status(appt['appointmentID'], "Confirmed")
-                st.success(f"Appointment {appt['appointmentID']} confirmed.")
-                st.experimental_rerun()
-        with col2:
-            reason = st.text_input(f"Rejection Reason {appt['appointmentID']}", key=f"rej_{appt['appointmentID']}")
-            if st.button(f"Reject {appt['appointmentID']}"):
-                if reason:
-                    update_appointment_status(appt['appointmentID'], "Rejected", rejection_reason=reason)
-                    update_schedule_slot_status(appt['ScheduleID'], "Available")
-                    st.success(f"Appointment {appt['appointmentID']} rejected.")
-                    st.experimental_rerun()
-                else:
-                    st.error("Please provide a rejection reason.")
-
-# ---------------- Set Availability ----------------
-elif choice == "Set Availability":
-    st.subheader("Set Your Availability")
-    date = st.date_input("Select date")
-    time = st.selectbox("Time", ["9:00AM", "11:00AM", "2:00PM", "4:00PM"])
-    if st.button("Add Slot"):
-        existing = get_all_pharmacist_schedule_slots()
-        for slot in existing:
-            if slot['PharmacistUsername'] == st.session_state.user_username and slot['Date'] == str(date) and slot['Time'] == time:
-                st.warning("Slot already exists.")
-                break
-        else:
-            save_pharmacist_schedule_slot([st.session_state.user_username, str(date), time, "Available"])
-            st.success(f"Slot added: {date} {time}")
-            st.experimental_rerun()
-
-# ---------------- View My Schedule ----------------
-elif choice == "View My Schedule":
-    st.subheader("My Schedule")
-    slots = get_all_pharmacist_schedule_slots()
-    mine = [s for s in slots if s['PharmacistUsername'] == st.session_state.user_username]
-    df = pd.DataFrame(mine)
-    if not df.empty:
-        st.dataframe(df[['Date', 'Time', 'Status']])
+    if not appointments:
+        st.info("No appointments found.")
     else:
-        st.info("No schedule slots found.")
+        # Split appointments by status
+        active_appointments = [a for a in appointments if a["Status"] in ["Pending Confirmation", "Confirmed"]]
+        inactive_appointments = [a for a in appointments if a["Status"] in ["Cancelled", "Completed"]]
 
-# ---------------- Logout ----------------
+        # ----------------------
+        # Section 1: Active Appointments
+        st.markdown("### 📋 Active Appointments (Pending / Confirmed)")
+        for idx, appt in enumerate(active_appointments):
+            cust = customers.get(str(appt["customerID"]), {})
+            full_name = cust.get("Full Name", "Unknown")
+            email = cust.get("Email", "N/A")
+            phone = cust.get("Phone Number", "N/A")
+            referral_link = appt.get("appointmentReferralLetter", "")
+
+            st.markdown(f"""
+                <div style="border: 1px solid #ccc; padding: 1px; border-radius: 6px; margin-bottom: 10px; background-color: #f9f9f9;">
+            """, unsafe_allow_html=True)
+            
+            cols = st.columns([1, 2, 2, 1.5, 1.5, 2, 2])
+            cols[0].write(f"🆔 {appt['appointmentID']}")
+            cols[1].write(f"👤 {full_name}")
+            cols[2].write(f"📧 {email}\n\n📱 {phone}")
+            cols[3].write(f"📅 {appt['Date']}")
+            cols[4].write(f"🕒 {appt['Time']}")
+            cols[5].markdown(f"[📄 Letter]({referral_link})" if referral_link else "—", unsafe_allow_html=True)
+
+            new_status = cols[6].selectbox(
+                "Status",
+                ["Pending Confirmation", "Confirmed", "Cancelled", "Completed"],
+                index=["Pending Confirmation", "Confirmed", "Cancelled", "Completed"].index(appt["Status"]),
+                key=f"status_{idx}"
+            )
+
+            if st.button("Update", key=f"update_{idx}"):
+                update_appointment_status(appt["appointmentID"], new_status)
+                st.success(f"✅ Appointment {appt['appointmentID']} updated.")
+                st.rerun()
+
+         
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+
+        # --------------------
+        # Section 2: Past Appointments
+        past_appts = [appt for appt in appointments if appt["Status"] in ["Cancelled", "Completed"]]
+
+        if past_appts:
+            st.markdown("---")
+            st.markdown("### 📋 Past Appointments (Cancelled or Completed)")
+
+            # Build customer lookup to fetch name/email/phone
+            customers = {str(c["customerID"]): c for c in get_all_customers()}
+            
+
+            # Header
+            header = st.columns([1, 2, 2, 1.5, 1.5, 2, 1.5])
+            header[0].markdown("**🆔 ID**")
+            header[1].markdown("**👤 Name**")
+            header[2].markdown("**📧 Contact**")
+            header[3].markdown("**📅 Date**")
+            header[4].markdown("**🕒 Time**")
+            header[5].markdown("**📄 Referral Letter**")
+            header[6].markdown("**📌 Status**")
+            
+            for appt in past_appts:
+                cust = customers.get(str(appt["customerID"]), {})
+                full_name = cust.get("Full Name", "Unknown")
+                email = cust.get("Email", "N/A")
+                phone = cust.get("Phone Number", "N/A")
+                referral_link = appt.get("appointmentReferralLetter", "")
+
+                st.markdown(f"""
+                <div style="border: 1px solid #ccc; padding: 1px; border-radius: 6px; margin-bottom: 10px; background-color: #f9f9f9;">
+            """, unsafe_allow_html=True)
+                cols = st.columns([1, 2, 2, 1.5, 1.5, 2, 1.5])
+                cols[0].write(f"{appt['appointmentID']}")
+                cols[1].write(f"{full_name}")
+                cols[2].markdown(f"{email}<br>{phone}", unsafe_allow_html=True)
+                cols[3].write(f"{appt['Date']}")
+                cols[4].write(f"{appt['Time']}")
+                cols[5].markdown(f"[📄 Download]({referral_link})" if referral_link else "—", unsafe_allow_html=True)
+                cols[6].write(f"{appt['Status']}")
+                
+               
+
+
+
+
+# --------------------------------------------
+# Update Slot Availability
+elif choice == "Update Slot Availability":
+    st.subheader("➕ Add New Slot")
+    slot_date = st.date_input("Available Date")
+    slot_time = st.selectbox("Available Time", ["8:00AM-9:00AM","9:00AM-10:00AM", "10:00AM-11:00AM", "11:00AM-12:00PM","2:00PM-3:00PM", "3:00PM-4:00PM", "4:00PM-5:00PM"])
+    schedule = get_pharmacist_schedule()
+    if st.button("Add Slot"):
+        if any(s["Date"] == str(slot_date) and s["Time"] == slot_time for s in schedule):
+            st.warning("Slot already exists.")
+        else:
+            update_schedule(str(slot_date), slot_time)
+            st.success("Slot added!")
+            st.rerun()
+        st.markdown("---")
+
+    # Calendar display
+    st.markdown("### 📌 Available Slots")
+
+    if not schedule:
+        st.info("No slots available.")
+    else:
+        df_slots = pd.DataFrame(schedule)
+
+        for idx, row in df_slots.iterrows():
+            cols = st.columns([3, 3, 1])
+            cols[0].write(f"📅 Date: **{row['Date']}**")
+            cols[1].write(f"🕒 Time: **{row['Time']}**")
+            if cols[2].button("❌ Delete", key=f"delete_slot_{idx}"):
+                from google_sheets import remove_schedule_slot
+                remove_schedule_slot(row['Date'], row['Time'])
+                st.success(f"Slot on {row['Date']} at {row['Time']} deleted.")
+                st.rerun()
+
+
+# --------------------------------------------
+# Add Report
+elif choice == "Add Report":
+    st.subheader("Add Appointment Report")
+    appt_id = st.text_input("Appointment ID")
+    report_date = st.date_input("Report Date")
+    content = st.text_area("Report Content")
+    if st.button("Save Report"):
+        save_report([appt_id, str(report_date), content])
+        st.success("Report saved.")
+
+# --------------------------------------------
+# Logout
 elif choice == "Logout":
     for key in list(st.session_state.keys()):
         del st.session_state[key]
-    st.experimental_rerun()
+    st.rerun()
