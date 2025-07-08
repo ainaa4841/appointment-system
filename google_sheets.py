@@ -88,4 +88,7 @@ def update_schedule_slot_status(schedule_id, new_status):
     data = ws.get_all_values()
     headers = data[0]
     for i, row in enumerate(data[1:], start=2):
-        if str(row[0]) == str(sch
+        if str(row[0]) == str(schedule_id):
+            status_col = headers.index("Status") + 1
+            ws.update_cell(i, status_col, new_status)
+            break
