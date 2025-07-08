@@ -80,7 +80,7 @@ elif choice == "Login":
             st.session_state.user_email = email
             if role == "Customer":
                 st.session_state.customer_id = get_customer_id(username)
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("Invalid credentials.")
 
@@ -133,7 +133,7 @@ elif choice == "Book Appointment":
                 update_schedule_slot_status(selected_slot['ScheduleID'], "Booked")
 
                 st.success("Appointment booked. Await pharmacist confirmation.")
-                st.experimental_rerun()
+                st.rerun()
 
 # ---------------- My Appointments ----------------
 elif choice == "My Appointments":
@@ -173,7 +173,7 @@ elif choice == "Manage Pending Appointments":
             if st.button(f"Confirm {appt['appointmentID']}"):
                 update_appointment_status(appt['appointmentID'], "Confirmed")
                 st.success(f"Appointment {appt['appointmentID']} confirmed.")
-                st.experimental_rerun()
+                st.rerun()
         with col2:
             if st.button(f"Reject {appt['appointmentID']}"):
                 reason = st.text_input("Reason for rejection:")
@@ -181,7 +181,7 @@ elif choice == "Manage Pending Appointments":
                     update_appointment_status(appt['appointmentID'], "Rejected", rejection_reason=reason)
                     update_schedule_slot_status(appt['ScheduleID'], "Available")
                     st.success(f"Appointment {appt['appointmentID']} rejected.")
-                    st.experimental_rerun()
+                    st.rerun()
 
 # ---------------- Set Availability ----------------
 elif choice == "Set Availability":
@@ -197,7 +197,7 @@ elif choice == "Set Availability":
         else:
             save_pharmacist_schedule_slot([st.session_state.user_username, str(date), time, "Available"])
             st.success(f"Slot added: {date} {time}")
-            st.experimental_rerun()
+            st.rerun()
 
 # ---------------- View My Schedule ----------------
 elif choice == "View My Schedule":
@@ -214,4 +214,4 @@ elif choice == "View My Schedule":
 elif choice == "Logout":
     for key in list(st.session_state.keys()):
         del st.session_state[key]
-    st.experimental_rerun()
+    st.rerun()
