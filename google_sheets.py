@@ -91,6 +91,21 @@ def remove_schedule_slot(date, time):
             return
     print(f"[DEBUG] Slot not found for deletion: {date} - {time}")
 
+def upload_to_drive(file_path):
+    drive_service = build("drive", "v3", credentials=creds)
+    file_metadata = {
+        "name": os.path.basename(file_path),
+        "parents": [FOLDER_ID]
+    }
+    mimetype, _ = mimetypes.guess_type(file_path)
+    media = MediaFileUpload(file_path, mimetype=mimetype)
+    uploaded_file = drive_service.files().create(
+        body=file_metadata,
+        media_body=media,
+        fields="id"
+    ).execute()
+    return uploaded_file.get("id")
+
 
 def restore_schedule_slot(date, time):
     worksheet = spreadsheet.worksheet("Schedules")
