@@ -104,8 +104,6 @@ elif choice == "Book Appointment":
                     f.write(uploaded_file.getbuffer())
 
                 file_link = f"uploads/{uploaded_file.name}"
-                save_file_metadata([st.session_state.user_username, uploaded_file.name, file_link])
-                update_customer_referral_letter(st.session_state.user_username, file_link)
 
                 save_appointment([
                     st.session_state.customer_id,
@@ -113,6 +111,7 @@ elif choice == "Book Appointment":
                     selected_time,
                     "Pending Confirmation"
                 ], referral_path=file_link)
+
                 st.success(f"Appointment booked on {selected_date} at {selected_time}.")
 # --------------------------------------------
 # My Appointments
