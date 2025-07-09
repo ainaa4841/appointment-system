@@ -195,112 +195,10 @@ elif choice == "My Appointments":
                 row[2].write(f"{appt['Status']}")
 
 
-# --------------------------------------------
-# Manage Appointment
-elif choice == "Manage Appointment":
-    st.subheader("Pharmacist: Manage Appointments & Availability")
-
-    appointments = get_appointments()
-    customers = {str(c["customerID"]): c for c in get_all_customers()}
-
-    if not appointments:
-        st.info("No appointments found.")
-    else:
-        # Split appointments by status
-        active_appointments = [a for a in appointments if a["Status"] in ["Pending Confirmation", "Confirmed"]]
-        inactive_appointments = [a for a in appointments if a["Status"] in ["Cancelled", "Completed"]]
-
-        # ----------------------
-        # Section 1: Active Appointments
-        st.markdown("### 📋 Active Appointments (Pending / Confirmed)")
-        for idx, appt in enumerate(active_appointments):
-            cust = customers.get(str(appt["customerID"]), {})
-            full_name = cust.get("Full Name", "Unknown")
-            email = cust.get("Email", "N/A")
-            phone = cust.get("Phone Number", "N/A")
-            referral_path = appt.get("appointmentReferralLetter", "")
-
-            st.markdown(f"""
-                <div style="border: 1px solid #ccc; padding: 1px; border-radius: 6px; margin-bottom: 10px; background-color: #f9f9f9;">
-            """, unsafe_allow_html=True)
-            
-            cols = st.columns([1, 2, 2, 1.5, 1.5, 2, 2])
-            cols[0].write(f"🆔 {appt['appointmentID']}")
-            cols[1].write(f"👤 {full_name}")
-            cols[2].write(f"📧 {email}\n\n📱 {phone}")
-            cols[3].write(f"📅 {appt['Date']}")
-            cols[4].write(f"🕒 {appt['Time']}")
-
-            # 📄 Referral download button
-            if referral_path and os.path.exists(referral_path):
-                with open(referral_path, "rb") as f:
-                    cols[5].download_button(
-                        label="📄 Download Letter",
-                        data=f,
-                        file_name=os.path.basename(referral_path),
-                        mime="application/octet-stream",
-                        key=f"download_{idx}"
-                    )
-            else:
-                cols[5].write("—")
-
-            # ✅ Update status
-            new_status = cols[6].selectbox(
-                "Status",
-                ["Pending Confirmation", "Confirmed", "Cancelled", "Completed"],
-                index=["Pending Confirmation", "Confirmed", "Cancelled", "Completed"].index(appt["Status"]),
-                key=f"status_{idx}"
-            )
-
-            if st.button("Update", key=f"update_{idx}"):
-                update_appointment_status(appt["appointmentID"], new_status)
-                st.success(f"✅ Appointment {appt['appointmentID']} updated.")
-                st.rerun()
-
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        # --------------------
-        # Section 2: Past Appointments
-        past_appts = [appt for appt in appointments if appt["Status"] in ["Cancelled", "Completed"]]
-
-        if past_appts:
-            st.markdown("---")
-            st.markdown("### 📋 Past Appointments (Cancelled or Completed)")
-
-            # Build customer lookup to fetch name/email/phone
-            customers = {str(c["customerID"]): c for c in get_all_customers()}
-            
-
-            # Header
-            header = st.columns([1, 2, 2, 1.5, 1.5, 2, 1.5])
-            header[0].markdown("**🆔 ID**")
-            header[1].markdown("**👤 Name**")
-            header[2].markdown("**📧 Contact**")
-            header[3].markdown("**📅 Date**")
-            header[4].markdown("**🕒 Time**")
-            header[6].markdown("**📌 Status**")
-            
-            for appt in past_appts:
-                cust = customers.get(str(appt["customerID"]), {})
-                full_name = cust.get("Full Name", "Unknown")
-                email = cust.get("Email", "N/A")
-                phone = cust.get("Phone Number", "N/A")
-                referral_link = appt.get("appointmentReferralLetter", "")
-
-                st.markdown(f"""
-                <div style="border: 1px solid #ccc; padding: 1px; border-radius: 6px; margin-bottom: 10px; background-color: #f9f9f9;">
-            """, unsafe_allow_html=True)
-                cols = st.columns([1, 2, 2, 1.5, 1.5, 2, 1.5])
-                cols[0].write(f"{appt['appointmentID']}")
-                cols[1].write(f"{full_name}")
-                cols[2].markdown(f"{email}<br>{phone}", unsafe_allow_html=True)
-                cols[3].write(f"{appt['Date']}")
-                cols[4].write(f"{appt['Time']}")
-                cols[6].write(f"{appt['Status']}")
 
 # --------------------------------------------
 # Update Slot Availability
-elif choice == "Update Slot Availability":
+elif choice == "Add Slot Availability":
     st.subheader("➕ Add New Slot")
     slot_date = st.date_input("Available Date")
     slot_time = st.selectbox("Available Time", ["8:00AM-9:00AM","9:00AM-10:00AM", "10:00AM-11:00AM", "11:00AM-12:00PM","2:00PM-3:00PM", "3:00PM-4:00PM", "4:00PM-5:00PM"])
@@ -312,10 +210,9 @@ elif choice == "Update Slot Availability":
             update_schedule(str(slot_date), slot_time)
             st.success("Slot added!")
             st.rerun()
-        st.markdown("---")
 
-    # Calendar display
-    st.markdown("### 📌 Available Slots")
+elif choice == "Available Slots":
+    st.subheader("📌 Available Slots")
 
     if not schedule:
         st.info("No slots available.")
