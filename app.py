@@ -151,7 +151,7 @@ elif choice == "Manage Appointments":
             referral_path = appt.get("appointmentReferralLetter", "")
 
             st.markdown(f"""
-                <div style="border: 1px solid #ccc; padding: 0.5px; border-radius: 6px; margin-bottom: 10px; background-color: #f9f9f9;">
+                <div style="border: 1px solid #ccc; padding: 0.1px; border-radius: 6px; margin-bottom: 10px; background-color: #f9f9f9;">
             """, unsafe_allow_html=True)
 
             cols = st.columns([1, 1, 2, 2, 1.5, 1.5, 2, 2])
