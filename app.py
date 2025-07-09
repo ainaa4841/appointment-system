@@ -332,15 +332,61 @@ elif choice == "Available Slots":
 # --------------------------------------------
 # Add Report
 elif choice == "Add Report":
-    st.subheader("Add Appointment Report")
+    st.subheader("📝 Add Appointment Report")
 
-    appt_id = st.text_input("Customers ID")
+    customer_id = st.text_input("Customer ID")
     appt_id = st.text_input("Appointment ID")
     report_date = st.date_input("Report Date")
     content = st.text_area("Report Content")
+
     if st.button("Save Report"):
-        save_report([appt_id, str(report_date), content])
-        st.success("Report saved.")
+        if not all([customer_id, appt_id, content]):
+            st.error("Please complete all fields.")
+        else:
+            save_report([appt_id, str(report_date), content])
+            st.success("✅ Report saved.")
+
+    st.markdown("---")
+    st.subheader("📄 View Submitted Reports")
+
+    reports = get_all_reports()
+    appointments = get_appointments()
+
+    # Create a mapping of appointmentID to customerID
+    appt_to_customer = {str(a["appointmentID"]): str(a["customerID"]) for a in appointments}
+
+    # Attach customerID to each report
+    for rep in reports:
+        rep["customerID"] = appt_to_customer.get(str(rep["appointmentID"]), "Unknown")
+
+    # Filter Options
+    customer_ids = sorted(set(r["customerID"] for r in reports if r["customerID"] != "Unknown"))
+    appt_ids = sorted(set(r["appointmentID"] for r in reports))
+
+    selected_cust_id = st.selectbox("🔍 Filter by Customer ID", ["All"] + customer_ids)
+    selected_appt_id = st.selectbox("📎 Filter by Appointment ID", ["All"] + appt_ids)
+
+    # Apply filters
+    filtered_reports = reports
+    if selected_cust_id != "All":
+        filtered_reports = [r for r in filtered_reports if r["customerID"] == selected_cust_id]
+    if selected_appt_id != "All":
+        filtered_reports = [r for r in filtered_reports if r["appointmentID"] == selected_appt_id]
+
+    if not filtered_reports:
+        st.info("No matching reports found.")
+    else:
+        for rep in filtered_reports:
+            st.markdown(f"""
+                <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; border-radius: 5px; background-color: #f8f8f8;">
+                    <strong>📋 Report ID:</strong> {rep['reportID']}<br>
+                    <strong>👤 Customer ID:</strong> {rep['customerID']}<br>
+                    <strong>📎 Appointment ID:</strong> {rep['appointmentID']}<br>
+                    <strong>📅 Date:</strong> {rep['reportDate']}<br>
+                    <strong>📝 Content:</strong><br>
+                    <div style="margin-left: 15px;">{rep['reportContent']}</div>
+                </div>
+            """, unsafe_allow_html=True)
 
 # --------------------------------------------
 # Logout
