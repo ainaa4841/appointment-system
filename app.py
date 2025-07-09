@@ -32,7 +32,7 @@ if st.session_state.logged_in:
     if st.session_state.user_role == 'Customer':
         menu = ["Book Appointment", "My Appointments", "Logout"]
     elif st.session_state.user_role == 'Pharmacist':
-        menu = ["Manage Appointment", "Add Slot Availability",""Available Slots", "Add Report", "Logout"]
+        menu = ["Manage Appointments", "Add Slot Availability",""Available Slots", "Add Report", "Logout"]
 
 choice = st.sidebar.selectbox("Menu", menu)
 
