@@ -196,8 +196,8 @@ elif choice == "My Appointments":
 
 
 # --------------------------------------------
-# Manage Schedule
-elif choice == "Manage Schedule":
+# Manage Appointment
+elif choice == "Manage Appointment":
     st.subheader("Pharmacist: Manage Appointments & Availability")
 
     appointments = get_appointments()
