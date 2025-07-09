@@ -220,9 +220,9 @@ elif choice == "Manage Appointments":
 
         for idx, appt in enumerate(filtered_appointments):
             cust = customers.get(str(appt["customerID"]), {})
-            full_name = cust.get("customerName", "Unknown")
-            email = cust.get("cutstomerEmail", "N/A")
-            phone = cust.get("customerNumber", "N/A")
+            full_name = cust.get("Full Name", "Unknown")
+            email = cust.get("Email", "N/A")
+            phone = cust.get("Phone Number", "N/A")
             referral_path = appt.get("appointmentReferralLetter", "")
 
             st.markdown(f"""
