@@ -117,82 +117,78 @@ elif choice == "Book Appointment":
 
 
 # --------------------------------------------
-# My Appointments
-elif choice == "My Appointments":
-    st.subheader("📋 My Appointments")
+# Manage Appointment
+elif choice == "Manage Appointments":
+    st.subheader("🗂️ Manage Appointments")
 
     appointments = get_appointments()
-    my_appointments = [
-        appt for appt in appointments
-        if str(appt.get('customerID')) == str(st.session_state.customer_id)
-    ]
+    customers = {str(c["customerID"]): c for c in get_all_customers()}
 
-    if not my_appointments:
+    if not appointments:
         st.info("No appointments found.")
     else:
-        active_appts = [appt for appt in my_appointments if appt['Status'] in ["Pending Confirmation", "Confirmed", "Rescheduled"]]
-        past_appts = [appt for appt in my_appointments if appt['Status'] in ["Cancelled", "Completed"]]
+        # 🔍 Filter options
+        customer_ids = sorted(set(str(a["customerID"]) for a in appointments))
+        statuses = ["All", "Pending Confirmation", "Confirmed", "Cancelled", "Completed"]
 
-        # --------------------
-        # Section 1: Active
-        st.markdown("### 🗓️ Upcoming Appointments")
-        for idx, appt in enumerate(active_appts):
-            cols = st.columns([2, 2, 2, 2, 2])
-            cols[0].write(f"📅 **{appt['Date']}**")
-            cols[1].write(f"🕒 **{appt['Time']}**")
-            cols[2].write(f"📌 **{appt['Status']}**")
+        selected_customer = st.selectbox("🔎 Filter by Customer ID", ["All"] + customer_ids)
+        selected_status = st.selectbox("📌 Filter by Status", statuses)
 
-            # RESCHEDULE BUTTON
-            if cols[3].button("Reschedule", key=f"reschedule_{idx}"):
-                with st.form(f"reschedule_form_{idx}"):
-                    st.subheader(f"Reschedule Slot for {appt['Date']} {appt['Time']}")
-                    schedule = get_pharmacist_schedule()
-                    booked = [(a['Date'], a['Time']) for a in get_appointments()]
-                    available_slots = [
-                        s for s in schedule if (s['Date'], s['Time']) not in booked
-                    ]
+        # Apply filters
+        filtered_appointments = appointments
+        if selected_customer != "All":
+            filtered_appointments = [a for a in filtered_appointments if str(a["customerID"]) == selected_customer]
+        if selected_status != "All":
+            filtered_appointments = [a for a in filtered_appointments if a["Status"] == selected_status]
 
-                    dates = sorted(list(set([s['Date'] for s in available_slots])))
-                    new_date = st.selectbox("New Date", dates)
-                    new_times = [s['Time'] for s in available_slots if s['Date'] == new_date]
-                    new_time = st.selectbox("New Time", new_times)
+        st.markdown(f"### Showing {len(filtered_appointments)} appointments")
 
-                    submitted = st.form_submit_button("Confirm Reschedule")
-                    if submitted:
-                        update_appointment_status(
-                            appointment_id=appt["appointmentID"],
-                            new_status="Rescheduled",
-                            new_date=new_date,
-                            new_time=new_time
-                        )
-                        st.success("Rescheduled successfully!")
-                        st.rerun()
+        for idx, appt in enumerate(filtered_appointments):
+            cust = customers.get(str(appt["customerID"]), {})
+            full_name = cust.get("customerName", "Unknown")
+            email = cust.get("cutstomerEmail", "N/A")
+            phone = cust.get("customerNumber", "N/A")
+            referral_path = appt.get("appointmentReferralLetter", "")
 
-            # CANCEL BUTTON
-            if cols[4].button("❌ Cancel", key=f"cancel_{idx}"):
-                update_appointment_status(
-                    appointment_id=appt["appointmentID"],
-                    new_status="Cancelled"
-                )
-                st.success("❌ Appointment cancelled.")
+            st.markdown(f"""
+                <div style="border: 1px solid #ccc; padding: 6px; border-radius: 6px; margin-bottom: 10px; background-color: #f9f9f9;">
+            """, unsafe_allow_html=True)
+
+            cols = st.columns([1, 1, 2, 2, 1.5, 1.5, 2, 2])
+            cols[0].write(f"🆔 {appt['appointmentID']}")
+            cols[1].write(f"🧾 CID: {appt['customerID']}")
+            cols[2].write(f"👤 {full_name}")
+            cols[3].write(f"📧 {email}\n\n📱 {phone}")
+            cols[4].write(f"📅 {appt['Date']}")
+            cols[5].write(f"🕒 {appt['Time']}")
+
+            # 📄 Referral Letter
+            if referral_path and os.path.exists(referral_path):
+                with open(referral_path, "rb") as f:
+                    cols[6].download_button(
+                        label="📄 Download",
+                        data=f,
+                        file_name=os.path.basename(referral_path),
+                        mime="application/octet-stream",
+                        key=f"download_{idx}"
+                    )
+            else:
+                cols[6].write("—")
+
+            # ✅ Update status
+            new_status = cols[7].selectbox(
+                "Status",
+                ["Pending Confirmation", "Confirmed", "Cancelled", "Completed"],
+                index=["Pending Confirmation", "Confirmed", "Cancelled", "Completed"].index(appt["Status"]),
+                key=f"status_{idx}"
+            )
+
+            if st.button("Update", key=f"update_{idx}"):
+                update_appointment_status(appt["appointmentID"], new_status)
+                st.success(f"✅ Appointment {appt['appointmentID']} updated.")
                 st.rerun()
 
-        # --------------------
-        # Section 2: Past Appointments
-        if past_appts:
-            st.markdown("---")
-            st.markdown("### 📋 Past Appointments (Cancelled or Completed)")
-
-            header = st.columns([2, 2, 2])
-            header[0].markdown("**📅 Date**")
-            header[1].markdown("**🕒 Time**")
-            header[2].markdown("**📌 Status**")
-
-            for appt in past_appts:
-                row = st.columns([2, 2, 2])
-                row[0].write(f"{appt['Date']}")
-                row[1].write(f"{appt['Time']}")
-                row[2].write(f"{appt['Status']}")
+            st.markdown("</div>", unsafe_allow_html=True)
 
 # --------------------------------------------
 # Manage Appointment
