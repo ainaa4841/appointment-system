@@ -55,24 +55,38 @@ def update_schedule(date, time):
 def get_pharmacist_schedule():
     return spreadsheet.worksheet("Schedules").get_all_records()
 
-def update_appointment_status(appointment_id, new_status, new_date=None, new_time=None):
-    worksheet = spreadsheet.worksheet("Appointments")
-    records = worksheet.get_all_records()
-    for idx, record in enumerate(records, start=2):  # Row 2 = data starts
-        if str(record["appointmentID"]) == str(appointment_id):
-            if new_status == "Cancelled":
-                worksheet.update_acell(f"E{idx}", "Cancelled")
-                restore_schedule_slot(record["Date"], record["Time"])
-            elif new_status == "Rescheduled":
-                old_date, old_time = record["Date"], record["Time"]
-                worksheet.update_acell(f"C{idx}", new_date)
-                worksheet.update_acell(f"D{idx}", new_time)
-                worksheet.update_acell(f"E{idx}", "Pending Confirmation")
-                restore_schedule_slot(old_date, old_time)
-                remove_schedule_slot(new_date, new_time)
-            else:
-                worksheet.update_acell(f"E{idx}", new_status)
-            break
+def update_appointment_status(appointment_id, new_status=None, new_date=None, new_time=None):
+    import gspread
+    from google.oauth2 import service_account
+    import streamlit as st
+
+    # Authorize and access the worksheet
+    creds = service_account.Credentials.from_service_account_info(st.secrets["GOOGLE_SERVICE_ACCOUNT"])
+    client = gspread.authorize(creds)
+    sheet = client.open_by_key(st.secrets["SPREADSHEET_ID"]).worksheet("Appointments")
+
+    # Get all data
+    records = sheet.get_all_records()
+    headers = sheet.row_values(1)
+
+    for idx, row in enumerate(records):
+        if str(row["appointmentID"]) == str(appointment_id):
+            row_num = idx + 2  # Offset because sheet rows start at 1, and row 1 is headers
+
+            if new_status:
+                col_status = headers.index("Status") + 1
+                sheet.update_cell(row_num, col_status, new_status)
+
+            if new_date:
+                col_date = headers.index("Date") + 1
+                sheet.update_cell(row_num, col_date, new_date)
+
+            if new_time:
+                col_time = headers.index("Time") + 1
+                sheet.update_cell(row_num, col_time, new_time)
+
+            break  # Stop after the first match
+
 
 
 def get_all_customers():
