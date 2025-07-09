@@ -113,8 +113,83 @@ elif choice == "Book Appointment":
                 ], referral_path=file_path)
 
                 st.success(f"Appointment booked on {selected_date} at {selected_time}.")
+# --------------------------------------------
+# My Appointments
+elif choice == "My Appointments":
+    st.subheader("📋 My Appointments")
 
+    appointments = get_appointments()
+    my_appointments = [
+        appt for appt in appointments
+        if str(appt.get('customerID')) == str(st.session_state.customer_id)
+    ]
 
+    if not my_appointments:
+        st.info("No appointments found.")
+    else:
+        active_appts = [appt for appt in my_appointments if appt['Status'] in ["Pending Confirmation", "Confirmed", "Rescheduled"]]
+        past_appts = [appt for appt in my_appointments if appt['Status'] in ["Cancelled", "Completed"]]
+
+        # --------------------
+        # Section 1: Active
+        st.markdown("### 🗓️ Upcoming Appointments")
+        for idx, appt in enumerate(active_appts):
+            cols = st.columns([2, 2, 2, 2, 2])
+            cols[0].write(f"📅 **{appt['Date']}**")
+            cols[1].write(f"🕒 **{appt['Time']}**")
+            cols[2].write(f"📌 **{appt['Status']}**")
+
+            # RESCHEDULE BUTTON
+            if cols[3].button("Reschedule", key=f"reschedule_{idx}"):
+                with st.form(f"reschedule_form_{idx}"):
+                    st.subheader(f"Reschedule Slot for {appt['Date']} {appt['Time']}")
+                    schedule = get_pharmacist_schedule()
+                    booked = [(a['Date'], a['Time']) for a in get_appointments()]
+                    available_slots = [
+                        s for s in schedule if (s['Date'], s['Time']) not in booked
+                    ]
+
+                    dates = sorted(list(set([s['Date'] for s in available_slots])))
+                    new_date = st.selectbox("New Date", dates)
+                    new_times = [s['Time'] for s in available_slots if s['Date'] == new_date]
+                    new_time = st.selectbox("New Time", new_times)
+
+                    submitted = st.form_submit_button("Confirm Reschedule")
+                    if submitted:
+                        update_appointment_status(
+                            appointment_id=appt["appointmentID"],
+                            new_status="Rescheduled",
+                            new_date=new_date,
+                            new_time=new_time
+                        )
+                        st.success("Rescheduled successfully!")
+                        st.rerun()
+
+            # CANCEL BUTTON
+            if cols[4].button("❌ Cancel", key=f"cancel_{idx}"):
+                update_appointment_status(
+                    appointment_id=appt["appointmentID"],
+                    new_status="Cancelled"
+                )
+                st.success("❌ Appointment cancelled.")
+                st.rerun()
+
+        # --------------------
+        # Section 2: Past Appointments
+        if past_appts:
+            st.markdown("---")
+            st.markdown("### 📋 Past Appointments (Cancelled or Completed)")
+
+            header = st.columns([2, 2, 2])
+            header[0].markdown("**📅 Date**")
+            header[1].markdown("**🕒 Time**")
+            header[2].markdown("**📌 Status**")
+
+            for appt in past_appts:
+                row = st.columns([2, 2, 2])
+                row[0].write(f"{appt['Date']}")
+                row[1].write(f"{appt['Time']}")
+                row[2].write(f"{appt['Status']}")
 
 # --------------------------------------------
 # Manage Appointment
