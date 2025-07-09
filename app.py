@@ -4,7 +4,7 @@ from google_sheets import (
     save_customer, upload_to_drive, save_appointment,
     get_appointments, get_pharmacist_schedule,
     update_schedule, update_appointment_status,
-    get_all_customers,  save_report
+    get_all_customers,  save_report, get_all_reports
 )
 import os
 import pandas as pd
