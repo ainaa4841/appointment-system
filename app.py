@@ -336,6 +336,8 @@ elif choice == "Available Slots":
 # Add Report
 elif choice == "Add Report":
     st.subheader("Add Appointment Report")
+
+    appt_id = st.text_input("Customers ID")
     appt_id = st.text_input("Appointment ID")
     report_date = st.date_input("Report Date")
     content = st.text_area("Report Content")
