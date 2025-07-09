@@ -316,6 +316,7 @@ elif choice == "Add Slot Availability":
 elif choice == "Available Slots":
     st.subheader("📌 Available Slots")
 
+    schedule = get_pharmacist_schedule()
     if not schedule:
         st.info("No slots available.")
     else:
