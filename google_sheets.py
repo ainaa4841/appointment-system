@@ -122,3 +122,8 @@ def restore_schedule_slot(date, time):
         if rec_date == str(date).strip().lower() and rec_time == str(time).strip().lower():
             return  # already exists
     worksheet.append_row([date, time])
+
+def get_all_reports():
+    ws = spreadsheet.worksheet("Reports")
+    return ws.get_all_records()
+
